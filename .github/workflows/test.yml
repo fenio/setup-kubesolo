@@ -20,6 +20,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Cache kubectl and binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/bin/kubectl
+            ~/.cache/kubesolo
+          key: ${{ runner.os }}-kubesolo-binaries-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-kubesolo-binaries-
+      
+      - name: Cache containerd images
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/lib/containerd
+            /var/lib/kubesolo/agent/containerd
+          key: ${{ runner.os }}-containerd-images-${{ hashFiles('.github/workflows/test.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-containerd-images-
+      
       - name: Setup KubeSolo
         id: kubesolo
         uses: ./
