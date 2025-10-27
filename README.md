@@ -144,14 +144,13 @@ jobs:
 ## Requirements
 
 - Runs on `ubuntu-latest` (or any Linux-based runner)
-- No container engines (Docker, Podman, containerd) should be running
 - Requires `sudo` access (provided by default in GitHub Actions)
 
 ## Important Notes
 
-### Container Runtime Conflicts
+### Container Runtime Handling
 
-The action will fail if Docker, Podman, or containerd services are already running. GitHub Actions runners typically don't have these running by default, but if you're using a self-hosted runner, ensure no container runtime is active.
+The action automatically stops any running container runtimes (Docker, Podman, containerd) before installing KubeSolo. This is safe on ephemeral GitHub Actions runners and ensures KubeSolo can manage the container runtime properly.
 
 ### Resource Considerations
 

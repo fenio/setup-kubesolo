@@ -64,32 +64,38 @@ outputs:
 runs:
   using: 'composite'
   steps:
-#    - name: Check for existing container runtimes
-#      shell: bash
-#      run: |
-#        echo "::group::Checking for existing container runtimes"
-#        
-#        # Check for Docker
-#        if systemctl is-active --quiet docker 2>/dev/null; then
-#          echo "::error::Docker service is running. Please stop Docker before installing KubeSolo."
-#          exit 1
-#        fi
-#        
-#        # Check for Podman
-#        if systemctl is-active --quiet podman 2>/dev/null; then
-#          echo "::error::Podman service is running. Please stop Podman before installing KubeSolo."
-#          exit 1
-#        fi
-#        
-#        # Check for containerd
-#        if systemctl is-active --quiet containerd 2>/dev/null; then
-#          echo "::error::containerd service is running. Please stop containerd before installing KubeSolo."
-#          exit 1
-#        fi
-#        
-#        echo "No conflicting container runtimes detected"
-#        echo "::endgroup::"
-#    
+    - name: Stop conflicting container runtimes
+      shell: bash
+      run: |
+        echo "::group::Stopping conflicting container runtimes"
+        
+        # Stop Docker if running
+        if systemctl is-active --quiet docker 2>/dev/null; then
+          echo "Docker service is running, stopping it..."
+          sudo systemctl stop docker
+          sudo systemctl disable docker 2>/dev/null || true
+          echo "✓ Docker stopped"
+        fi
+        
+        # Stop Podman if running
+        if systemctl is-active --quiet podman 2>/dev/null; then
+          echo "Podman service is running, stopping it..."
+          sudo systemctl stop podman
+          sudo systemctl disable podman 2>/dev/null || true
+          echo "✓ Podman stopped"
+        fi
+        
+        # Stop containerd if running
+        if systemctl is-active --quiet containerd 2>/dev/null; then
+          echo "containerd service is running, stopping it..."
+          sudo systemctl stop containerd
+          sudo systemctl disable containerd 2>/dev/null || true
+          echo "✓ containerd stopped"
+        fi
+        
+        echo "Container runtime cleanup complete"
+        echo "::endgroup::"
+    
     - name: Install KubeSolo
       id: install
       shell: bash
