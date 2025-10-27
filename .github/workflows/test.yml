@@ -30,6 +30,22 @@ jobs:
       
       - name: Test persistent storage
         run: |
+          echo "Creating PersistentVolume with hostPath..."
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: PersistentVolume
+          metadata:
+            name: test-pv
+          spec:
+            capacity:
+              storage: 1Gi
+            accessModes:
+              - ReadWriteOnce
+            hostPath:
+              path: /tmp/test-pv
+              type: DirectoryOrCreate
+          EOF
+          
           echo "Creating PersistentVolumeClaim..."
           kubectl apply -f - <<EOF
           apiVersion: v1
@@ -57,7 +73,7 @@ jobs:
             containers:
             - name: test-container
               image: busybox:latest
-              command: ["sh", "-c", "echo 'Hello from PVC!' > /data/test.txt && sleep 30"]
+              command: ["sh", "-c", "echo 'Hello from PVC!' > /data/test.txt && cat /data/test.txt && sleep 30"]
               volumeMounts:
               - name: test-volume
                 mountPath: /data
@@ -67,15 +83,19 @@ jobs:
                 claimName: test-pvc
           EOF
           
-          echo "Waiting for pod to be ready..."
+          echo "Waiting for pod to complete..."
           kubectl wait --for=condition=Ready pod/test-storage-pod --timeout=120s
           
-          echo "Verifying data was written..."
+          echo "Verifying pod output..."
+          kubectl logs test-storage-pod
+          
+          echo "Verifying data was written to volume..."
           kubectl exec test-storage-pod -- cat /data/test.txt
           
           echo "Cleaning up..."
           kubectl delete pod test-storage-pod
           kubectl delete pvc test-pvc
+          kubectl delete pv test-pv
           
           echo "✓ Persistent storage test passed!"
 
