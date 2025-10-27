@@ -64,32 +64,32 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Check for existing container runtimes
-      shell: bash
-      run: |
-        echo "::group::Checking for existing container runtimes"
-        
-        # Check for Docker
-        if systemctl is-active --quiet docker 2>/dev/null; then
-          echo "::error::Docker service is running. Please stop Docker before installing KubeSolo."
-          exit 1
-        fi
-        
-        # Check for Podman
-        if systemctl is-active --quiet podman 2>/dev/null; then
-          echo "::error::Podman service is running. Please stop Podman before installing KubeSolo."
-          exit 1
-        fi
-        
-        # Check for containerd
-        if systemctl is-active --quiet containerd 2>/dev/null; then
-          echo "::error::containerd service is running. Please stop containerd before installing KubeSolo."
-          exit 1
-        fi
-        
-        echo "No conflicting container runtimes detected"
-        echo "::endgroup::"
-    
+#    - name: Check for existing container runtimes
+#      shell: bash
+#      run: |
+#        echo "::group::Checking for existing container runtimes"
+#        
+#        # Check for Docker
+#        if systemctl is-active --quiet docker 2>/dev/null; then
+#          echo "::error::Docker service is running. Please stop Docker before installing KubeSolo."
+#          exit 1
+#        fi
+#        
+#        # Check for Podman
+#        if systemctl is-active --quiet podman 2>/dev/null; then
+#          echo "::error::Podman service is running. Please stop Podman before installing KubeSolo."
+#          exit 1
+#        fi
+#        
+#        # Check for containerd
+#        if systemctl is-active --quiet containerd 2>/dev/null; then
+#          echo "::error::containerd service is running. Please stop containerd before installing KubeSolo."
+#          exit 1
+#        fi
+#        
+#        echo "No conflicting container runtimes detected"
+#        echo "::endgroup::"
+#    
     - name: Install KubeSolo
       id: install
       shell: bash
