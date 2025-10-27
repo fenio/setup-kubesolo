@@ -64,6 +64,7 @@ runs:
       shell: bash
       env:
         KUBESOLO_VERSION: ${{ inputs.version }}
+        LOCAL_STORAGE: true
       run: |
         # Use default version if not set
         KUBESOLO_VERSION="${KUBESOLO_VERSION:-latest}"
