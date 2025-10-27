@@ -64,34 +64,36 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Stop conflicting container runtimes
+    - name: Remove conflicting container runtimes
       shell: bash
       run: |
-        echo "::group::Stopping conflicting container runtimes"
+        echo "::group::Removing conflicting container runtimes"
         
-        # Stop Docker if running
-        if systemctl is-active --quiet docker 2>/dev/null; then
-          echo "Docker service is running, stopping it..."
-          sudo systemctl stop docker
-          sudo systemctl disable docker 2>/dev/null || true
-          echo "✓ Docker stopped"
+        # Stop and remove Docker
+        if command -v docker &> /dev/null || systemctl list-unit-files | grep -q docker; then
+          echo "Docker detected, removing it..."
+          
+          # Stop Docker services
+          sudo systemctl stop docker.socket 2>/dev/null || true
+          sudo systemctl stop docker 2>/dev/null || true
+          
+          # Remove Docker packages
+          sudo apt-get remove -y docker docker-engine docker.io containerd runc docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true
+          sudo apt-get purge -y docker-ce docker-ce-cli containerd.io 2>/dev/null || true
+          
+          echo "✓ Docker removed"
         fi
         
-        # Stop Podman if running
-        if systemctl is-active --quiet podman 2>/dev/null; then
-          echo "Podman service is running, stopping it..."
-          sudo systemctl stop podman
-          sudo systemctl disable podman 2>/dev/null || true
-          echo "✓ Podman stopped"
+        # Stop and remove Podman
+        if command -v podman &> /dev/null; then
+          echo "Podman detected, removing it..."
+          sudo systemctl stop podman 2>/dev/null || true
+          sudo apt-get remove -y podman 2>/dev/null || true
+          echo "✓ Podman removed"
         fi
         
-        # Stop containerd if running
-        if systemctl is-active --quiet containerd 2>/dev/null; then
-          echo "containerd service is running, stopping it..."
-          sudo systemctl stop containerd
-          sudo systemctl disable containerd 2>/dev/null || true
-          echo "✓ containerd stopped"
-        fi
+        # Clean up
+        sudo apt-get autoremove -y 2>/dev/null || true
         
         echo "Container runtime cleanup complete"
         echo "::endgroup::"

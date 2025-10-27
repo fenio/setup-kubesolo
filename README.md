@@ -150,7 +150,7 @@ jobs:
 
 ### Container Runtime Handling
 
-The action automatically stops any running container runtimes (Docker, Podman, containerd) before installing KubeSolo. This is safe on ephemeral GitHub Actions runners and ensures KubeSolo can manage the container runtime properly.
+The action automatically removes any conflicting container runtimes (Docker, Podman, containerd) before installing KubeSolo. This is safe on ephemeral GitHub Actions runners and required by KubeSolo to avoid networking conflicts.
 
 ### Resource Considerations
 
