@@ -37,7 +37,7 @@ runs:
     - name: Remove conflicting container runtimes
       shell: bash
       run: |
-        echo "::group::Removing conflicting container runtimes"
+        echo "Removing conflicting container runtimes..."
         
         # Stop and remove Docker
         if command -v docker &> /dev/null || systemctl list-unit-files | grep -q docker || [ -S /var/run/docker.sock ]; then
@@ -76,8 +76,7 @@ runs:
         # Clean up
         sudo apt-get autoremove -y 2>/dev/null || true
         
-        echo "Container runtime cleanup complete"
-        echo "::endgroup::"
+        echo "✓ Container runtime cleanup complete"
     
     - name: Install KubeSolo
       id: install
@@ -85,7 +84,7 @@ runs:
       env:
         KUBESOLO_VERSION: ${{ inputs.version }}
       run: |
-        echo "::group::Installing KubeSolo"
+        echo "Installing KubeSolo ${KUBESOLO_VERSION}..."
         
         # Install KubeSolo
         if [ "${KUBESOLO_VERSION}" = "latest" ]; then
@@ -102,12 +101,12 @@ runs:
         # Make kubeconfig accessible
         sudo chmod 644 "${KUBECONFIG_PATH}"
         
-        echo "::endgroup::"
+        echo "✓ KubeSolo installed successfully"
     
     - name: Configure kubectl
       shell: bash
       run: |
-        echo "::group::Configuring kubectl"
+        echo "Configuring kubectl..."
         
         # Set KUBECONFIG environment variable
         KUBECONFIG_PATH="${{ steps.install.outputs.kubeconfig }}"
@@ -121,8 +120,7 @@ runs:
           rm kubectl
         fi
         
-        echo "kubectl version: $(kubectl version --client --short 2>/dev/null || kubectl version --client)"
-        echo "::endgroup::"
+        echo "✓ kubectl configured (version: $(kubectl version --client --short 2>/dev/null || kubectl version --client))"
     
     - name: Wait for cluster ready
       if: inputs.wait-for-ready == 'true'
@@ -130,11 +128,9 @@ runs:
       env:
         TIMEOUT: ${{ inputs.timeout }}
       run: |
-        echo "::group::Waiting for cluster to be ready"
+        echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT}s)..."
         
         export KUBECONFIG="${{ steps.install.outputs.kubeconfig }}"
-        
-        echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT}s)..."
         
         start_time=$(date +%s)
         while true; do
@@ -142,36 +138,36 @@ runs:
           elapsed=$((current_time - start_time))
           
           if [ $elapsed -gt ${TIMEOUT} ]; then
-            echo "::error::Timeout waiting for cluster to be ready"
+            echo "ERROR: Timeout waiting for cluster to be ready"
             exit 1
           fi
           
           # Check if API server is responding
           if kubectl cluster-info &>/dev/null; then
-            echo "API server is responding"
+            echo "  API server is responding"
             
             # Check if node is ready
             if kubectl wait --for=condition=Ready nodes --all --timeout=10s &>/dev/null; then
-              echo "Node is ready"
+              echo "  Node is ready"
               break
             fi
           fi
           
-          echo "Cluster not ready yet, waiting... (${elapsed}/${TIMEOUT}s)"
+          echo "  Cluster not ready yet, waiting... (${elapsed}/${TIMEOUT}s)"
           sleep 5
         done
         
-        echo "KubeSolo cluster is ready!"
-        echo "::endgroup::"
+        echo "✓ KubeSolo cluster is ready!"
     
     - name: Verify installation
       id: verify
       shell: bash
       run: |
-        echo "::group::Verifying KubeSolo installation"
+        echo "Verifying KubeSolo installation..."
         
         export KUBECONFIG="${{ steps.install.outputs.kubeconfig }}"
         
+        echo ""
         echo "Cluster Info:"
         kubectl cluster-info
         
@@ -191,4 +187,5 @@ runs:
         CLUSTER_INFO=$(kubectl cluster-info 2>&1 | head -n 1)
         echo "cluster-info=${CLUSTER_INFO}" >> $GITHUB_OUTPUT
         
-        echo "::endgroup::"
+        echo ""
+        echo "✓ All checks passed!"

@@ -28,10 +28,54 @@ jobs:
           kubectl get nodes
           kubectl get pods -A
       
-      - name: Test deployment
+      - name: Test persistent storage
         run: |
-          kubectl create deployment nginx --image=nginx:alpine
-          kubectl wait --for=condition=available --timeout=120s deployment/nginx
-          kubectl get deployments
-          kubectl delete deployment nginx
+          echo "Creating PersistentVolumeClaim..."
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: test-pvc
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 1Gi
+          EOF
+          
+          echo "Waiting for PVC to be bound..."
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/test-pvc --timeout=60s
+          
+          echo "Creating Pod that uses the PVC..."
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-storage-pod
+          spec:
+            containers:
+            - name: test-container
+              image: busybox:latest
+              command: ["sh", "-c", "echo 'Hello from PVC!' > /data/test.txt && sleep 30"]
+              volumeMounts:
+              - name: test-volume
+                mountPath: /data
+            volumes:
+            - name: test-volume
+              persistentVolumeClaim:
+                claimName: test-pvc
+          EOF
+          
+          echo "Waiting for pod to be ready..."
+          kubectl wait --for=condition=Ready pod/test-storage-pod --timeout=120s
+          
+          echo "Verifying data was written..."
+          kubectl exec test-storage-pod -- cat /data/test.txt
+          
+          echo "Cleaning up..."
+          kubectl delete pod test-storage-pod
+          kubectl delete pvc test-pvc
+          
+          echo "✓ Persistent storage test passed!"
 
