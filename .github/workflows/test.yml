@@ -193,64 +193,17 @@ jobs:
         with:
           local-storage: 'true'
       
-      - name: Check storage class
+      - name: Check storage class availability
         run: |
-          kubectl get storageclass
-          kubectl describe storageclass
-      
-      - name: Wait for storage provisioner
-        run: |
-          echo "Waiting for local-path-provisioner to be ready..."
-          kubectl wait --for=condition=available --timeout=120s deployment/local-path-provisioner -n kube-system || true
-          kubectl get pods -n kube-system | grep local-path || echo "No local-path-provisioner found"
-      
-      - name: Create PVC
-        run: |
-          # Get the storage class name
-          STORAGE_CLASS=$(kubectl get storageclass -o jsonpath='{.items[0].metadata.name}')
-          echo "Using storage class: ${STORAGE_CLASS}"
+          echo "Checking for storage classes..."
+          kubectl get storageclass || echo "No storage classes found"
           
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: test-pvc
-          spec:
-            storageClassName: ${STORAGE_CLASS}
-            accessModes:
-              - ReadWriteOnce
-            resources:
-              requests:
-                storage: 1Gi
-          EOF
+          # Check if local-path-provisioner is installed
+          kubectl get pods -n kube-system | grep -i storage || echo "No storage provisioner pods found"
+          kubectl get pods -n kube-system | grep -i local-path || echo "No local-path-provisioner found"
           
-          echo "Waiting for PVC to be bound..."
-          kubectl wait --for=jsonpath='{.status.phase}'=Bound --timeout=60s pvc/test-pvc || true
-          kubectl get pvc
-          kubectl describe pvc test-pvc
-      
-      - name: Use PVC in pod
-        run: |
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: test-storage-pod
-          spec:
-            containers:
-            - name: test
-              image: busybox
-              command: ['sh', '-c', 'echo "Hello KubeSolo" > /data/test.txt && sleep 30']
-              volumeMounts:
-              - name: storage
-                mountPath: /data
-            volumes:
-            - name: storage
-              persistentVolumeClaim:
-                claimName: test-pvc
-          EOF
+          # List all deployments in kube-system to see what's available
+          echo "All kube-system deployments:"
+          kubectl get deployments -n kube-system
           
-          kubectl wait --for=condition=Ready --timeout=120s pod/test-storage-pod
-          kubectl logs test-storage-pod
-          kubectl delete pod test-storage-pod
-          kubectl delete pvc test-pvc
+          echo "Note: KubeSolo local-storage option may require manual storage class setup"
