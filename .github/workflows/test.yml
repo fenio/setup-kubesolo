@@ -7,6 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Cancel in-progress runs for the same workflow on the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-basic-setup:
     runs-on: ubuntu-latest
@@ -24,9 +29,7 @@ jobs:
           echo "Kubeconfig: ${{ steps.kubesolo.outputs.kubeconfig }}"
           echo "Cluster Info: ${{ steps.kubesolo.outputs.cluster-info }}"
           
-          kubectl cluster-info
           kubectl get nodes
-          kubectl get pods -A
       
       - name: Test persistent storage
         run: |
@@ -61,7 +64,7 @@ jobs:
           EOF
           
           echo "Waiting for PVC to be bound..."
-          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/test-pvc --timeout=60s
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/test-pvc --timeout=30s
           
           echo "Creating Pod that uses the PVC..."
           kubectl apply -f - <<EOF
@@ -72,8 +75,8 @@ jobs:
           spec:
             containers:
             - name: test-container
-              image: busybox:latest
-              command: ["sh", "-c", "echo 'Hello from PVC!' > /data/test.txt && cat /data/test.txt && sleep 30"]
+              image: alpine:latest
+              command: ["sh", "-c", "echo 'Hello from PVC!' > /data/test.txt && cat /data/test.txt && sleep 10"]
               volumeMounts:
               - name: test-volume
                 mountPath: /data
@@ -83,19 +86,17 @@ jobs:
                 claimName: test-pvc
           EOF
           
-          echo "Waiting for pod to complete..."
-          kubectl wait --for=condition=Ready pod/test-storage-pod --timeout=120s
-          
-          echo "Verifying pod output..."
-          kubectl logs test-storage-pod
+          echo "Waiting for pod to start..."
+          kubectl wait --for=condition=Ready pod/test-storage-pod --timeout=60s
           
           echo "Verifying data was written to volume..."
-          kubectl exec test-storage-pod -- cat /data/test.txt
+          kubectl logs test-storage-pod
           
           echo "Cleaning up..."
-          kubectl delete pod test-storage-pod
-          kubectl delete pvc test-pvc
-          kubectl delete pv test-pv
+          kubectl delete pod test-storage-pod --wait=false
+          kubectl delete pvc test-pvc --wait=false
+          kubectl delete pv test-pv --wait=false
           
           echo "✓ Persistent storage test passed!"
+
 

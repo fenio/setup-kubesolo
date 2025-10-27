@@ -20,7 +20,7 @@ inputs:
   timeout:
     description: 'Timeout in seconds to wait for cluster readiness'
     required: false
-    default: '300'
+    default: '60'
 
 outputs:
   kubeconfig:
@@ -112,7 +112,7 @@ runs:
         TIMEOUT: ${{ inputs.timeout }}
       run: |
         # Use default timeout if not set
-        TIMEOUT_SECONDS="${TIMEOUT:-300}"
+        TIMEOUT_SECONDS="${TIMEOUT:-60}"
         echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT_SECONDS}s)..."
         
         export KUBECONFIG="${{ steps.install.outputs.kubeconfig }}"
