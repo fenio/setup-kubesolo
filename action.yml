@@ -65,6 +65,8 @@ runs:
       env:
         KUBESOLO_VERSION: ${{ inputs.version }}
       run: |
+        # Use default version if not set
+        KUBESOLO_VERSION="${KUBESOLO_VERSION:-latest}"
         echo "Installing KubeSolo ${KUBESOLO_VERSION}..."
         
         # Install KubeSolo
