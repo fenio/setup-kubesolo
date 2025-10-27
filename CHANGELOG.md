@@ -12,17 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for KubeSolo installation and configuration
 - Automatic kubectl configuration
 - Cluster readiness waiting mechanism
-- Portainer Edge integration support
 - Comprehensive test suite
 - Documentation and examples
 
 ### Features
 - Version selection (latest or specific version)
-- Custom API server SANs configuration
-- Local storage support
 - Configurable timeout for cluster readiness
-- Output kubeconfig path and cluster info
-- Container runtime conflict detection
+- Output kubeconfig path
+- Automatic Docker/Podman removal (safe on ephemeral runners)
+- Simplified configuration with sensible defaults
 
 ## [1.0.0] - TBD
 

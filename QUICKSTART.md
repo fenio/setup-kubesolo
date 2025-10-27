@@ -34,9 +34,9 @@ jobs:
 - name: Setup KubeSolo
   uses: fenio/setup-kubesolo@v1
   with:
-    version: 'latest'
-    timeout: '300'
-    local-storage: 'true'
+    version: 'latest'        # default: 'latest'
+    wait-for-ready: 'true'   # default: 'true'
+    timeout: '300'           # default: '300'
 ```
 
 ### 3. Using Outputs
@@ -47,7 +47,9 @@ jobs:
   uses: fenio/setup-kubesolo@v1
 
 - name: Show cluster info
-  run: echo "Kubeconfig at ${{ steps.kubesolo.outputs.kubeconfig }}"
+  run: |
+    echo "Kubeconfig at ${{ steps.kubesolo.outputs.kubeconfig }}"
+    kubectl cluster-info
 ```
 
 ## For Contributors
@@ -128,5 +130,3 @@ Then create a Pull Request on GitHub.
 2. Try the [examples](EXAMPLES.md)
 3. Check the [test workflow](.github/workflows/test.yml)
 4. Join the [KubeSolo community](https://github.com/portainer/kubesolo)
-
-Happy deploying! 🚀

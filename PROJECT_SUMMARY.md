@@ -2,7 +2,7 @@
 
 ## Overview
 
-A complete, marketplace-ready GitHub Action for installing and configuring KubeSolo in CI/CD workflows.
+A simplified, marketplace-ready GitHub Action for installing and configuring KubeSolo in CI/CD workflows.
 
 **Repository**: https://github.com/fenio/setup-kubesolo  
 **Type**: Composite Action (Bash-based, no JavaScript required)  
@@ -19,12 +19,15 @@ setup-kubesolo/
 ├── PUBLISHING.md           # Step-by-step publishing guide
 ├── QUICKSTART.md           # 5-minute quick start
 ├── EXAMPLES.md             # Advanced usage examples
+├── HOW_IT_WORKS.md         # Technical implementation details
 ├── CONTRIBUTING.md         # Contribution guidelines
+├── TESTING.md              # Testing guide
 ├── CHANGELOG.md            # Version history
 ├── .gitignore             # Git ignore rules
+├── validate.sh            # Pre-publish validation script
 └── .github/
     └── workflows/
-        └── test.yml        # Comprehensive test suite (6 test jobs)
+        └── test.yml        # Comprehensive test suite
 ```
 
 ## Key Features
@@ -33,25 +36,17 @@ setup-kubesolo/
 - ✅ One-step KubeSolo installation
 - ✅ Automatic kubectl configuration
 - ✅ Cluster readiness verification
-- ✅ Portainer Edge integration
-- ✅ Customizable timeouts and paths
-- ✅ Container runtime conflict detection
-- ✅ Local storage support
+- ✅ Automatic Docker/Podman removal (safe on ephemeral runners)
+- ✅ Customizable timeouts
+- ✅ Simple, minimal configuration
 
-### Inputs (9 parameters)
-- `version` - KubeSolo version (default: latest)
-- `kubesolo-path` - Installation path
-- `apiserver-extra-sans` - Additional TLS SANs
-- `local-storage` - Enable storage (default: true)
-- `portainer-edge-id` - Portainer ID
-- `portainer-edge-key` - Portainer key
-- `portainer-edge-async` - Async mode
-- `wait-for-ready` - Wait for cluster (default: true)
-- `timeout` - Readiness timeout (default: 300s)
+### Inputs (3 parameters)
+- `version` - KubeSolo version (default: `latest`)
+- `wait-for-ready` - Wait for cluster readiness (default: `true`)
+- `timeout` - Readiness timeout in seconds (default: `300`)
 
 ### Outputs
-- `kubeconfig` - Path to kubeconfig file
-- `cluster-info` - Cluster information
+- `kubeconfig` - Path to kubeconfig file (`/var/lib/kubesolo/pki/admin/admin.kubeconfig`)
 
 ## Usage Example
 
@@ -68,6 +63,20 @@ jobs:
       - uses: fenio/setup-kubesolo@v1
       - run: kubectl apply -f k8s/
 ```
+
+## Design Philosophy
+
+### Simplified Approach
+The action follows "convention over configuration":
+- Fixed installation path (`/var/lib/kubesolo`)
+- Automatic container runtime cleanup
+- Minimal input parameters
+- Sensible defaults
+
+### Why These Choices?
+1. **Automatic Docker Removal**: GitHub runners come with Docker pre-installed which conflicts with KubeSolo. Safe to remove because runners are ephemeral.
+2. **Fixed Path**: Uses KubeSolo's default installation path for consistency.
+3. **Minimal Inputs**: Most users only need version selection and timeout configuration.
 
 ## Next Steps to Publish
 
@@ -97,13 +106,11 @@ See **PUBLISHING.md** for complete instructions.
 
 ## Testing
 
-The action includes a comprehensive test suite with 6 test jobs:
-1. Basic setup test
-2. Custom configuration test
-3. Workload deployment test
-4. Helm integration test
-5. kubectl operations test
-6. Storage test
+The action includes a comprehensive test that validates:
+- KubeSolo installation
+- Cluster startup
+- nginx deployment
+- Pod readiness
 
 Run tests by pushing to your repository and checking the Actions tab.
 
@@ -124,6 +131,8 @@ Run tests by pushing to your repository and checking the Actions tab.
 | PUBLISHING.md | Complete publishing guide |
 | QUICKSTART.md | Quick 5-minute start guide |
 | EXAMPLES.md | Advanced usage examples |
+| HOW_IT_WORKS.md | Technical implementation details |
+| TESTING.md | Testing guide |
 | CONTRIBUTING.md | How to contribute |
 | CHANGELOG.md | Version history tracking |
 

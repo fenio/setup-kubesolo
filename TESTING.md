@@ -4,7 +4,7 @@
 
 **Fastest method** - Test before even pushing to GitHub!
 
-1. Create the workflow file `.github/workflows/local-test.yml` (already created)
+1. Create the workflow file `.github/workflows/test.yml` (already created)
 2. Push to GitHub:
    ```bash
    cd /Users/bfenski/setup-kubesolo
@@ -70,44 +70,17 @@ brew install act
 
 # Run the workflow locally
 cd /Users/bfenski/setup-kubesolo
-act -j test-local-action
+act -j test
 
 # Note: This has limitations with composite actions and sudo,
 # so GitHub testing is more reliable
-```
-
-## Method 5: Step-by-Step Manual Testing
-
-If you want to verify the bash scripts work manually:
-
-```bash
-# SSH into an Ubuntu machine or VM
-# Then run the commands from action.yml manually:
-
-# Check for container runtimes
-systemctl is-active --quiet docker 2>/dev/null && echo "Docker running"
-
-# Install KubeSolo
-export KUBESOLO_PATH="/var/lib/kubesolo"
-curl -sfL https://get.kubesolo.io | sudo -E sh -
-
-# Configure kubectl
-export KUBECONFIG="/var/lib/kubesolo/pki/admin/admin.kubeconfig"
-kubectl cluster-info
-kubectl get nodes
-
-# Wait for ready
-kubectl wait --for=condition=Ready nodes --all --timeout=300s
-
-# Verify
-kubectl get pods -A
 ```
 
 ## Recommended Testing Flow
 
 **Phase 1: Initial Testing**
 1. ✅ Push to GitHub
-2. ✅ Run local-test.yml workflow (uses `./`)
+2. ✅ Run test.yml workflow (uses `./`)
 3. ✅ Check GitHub Actions logs
 4. ✅ Verify cluster starts and kubectl works
 
@@ -134,10 +107,21 @@ kubectl get pods -A
 - [ ] KubeSolo installs correctly
 - [ ] kubectl is configured
 - [ ] Cluster becomes ready within timeout
-- [ ] Can deploy workloads
+- [ ] Can deploy workloads (nginx test)
 - [ ] Outputs are set correctly
 - [ ] Different input combinations work
 - [ ] Error handling works (e.g., timeout triggers)
+
+## The Test Workflow
+
+The `.github/workflows/test.yml` file includes a comprehensive test that:
+
+1. **Sets up KubeSolo** using the action
+2. **Deploys nginx** to verify cluster functionality
+3. **Waits for pod readiness** to ensure deployment works
+4. **Verifies the deployment** with kubectl commands
+
+This single test validates the core functionality of the action.
 
 ## Debugging Failed Tests
 
@@ -173,38 +157,22 @@ If something fails, check:
 ### Issue: Timeout waiting for cluster
 **Solution**: Increase timeout or check if runner has enough resources
 
-### Issue: Container runtime conflict
-**Solution**: This is expected behavior, validates the check works
+### Issue: Docker conflict
+**Solution**: Action automatically removes Docker - this is expected behavior
 
 ### Issue: kubectl not found
 **Solution**: Action installs kubectl automatically, verify this step runs
 
-## Quick Test Script
+## Quick Validation
 
-Want to see if I should create a simple test script that validates everything?
+Before pushing, validate your action files:
 
 ```bash
-#!/bin/bash
-# Quick validation script to run before publishing
-
-echo "🔍 Validating action.yml syntax..."
-# Check YAML is valid
-python3 -c "import yaml; yaml.safe_load(open('action.yml'))" && echo "✅ Valid YAML"
-
-echo "🔍 Checking required files..."
-required_files=("action.yml" "README.md" "LICENSE")
-for file in "${required_files[@]}"; do
-  [ -f "$file" ] && echo "✅ $file exists" || echo "❌ $file missing"
-done
-
-echo "🔍 Checking for placeholder text..."
-if grep -r "YOUR_USERNAME\|bfenski" . --exclude-dir=.git; then
-  echo "⚠️  Found placeholders to replace"
-else
-  echo "✅ No placeholders found"
-fi
-
-echo "✅ Ready to test on GitHub!"
+cd /Users/bfenski/setup-kubesolo
+./validate.sh
 ```
 
-Should I create this validation script for you?
+This checks:
+- ✅ Valid YAML syntax in action.yml
+- ✅ Required files exist
+- ✅ No placeholder text remaining

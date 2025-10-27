@@ -8,7 +8,6 @@ A GitHub Action for installing and configuring [KubeSolo](https://github.com/por
 - ✅ Automatic removal of conflicting container runtimes (Docker, Podman, containerd)
 - ✅ kubectl configured and ready to use
 - ✅ Waits for cluster readiness
-- ✅ Supports custom configuration options
 
 ## Quick Start
 
@@ -36,17 +35,15 @@ jobs:
 
 | Input | Description | Default |
 |-------|-------------|---------|
-| `version` | KubeSolo version to install | `latest` |
-| `wait-for-ready` | Wait for cluster to be ready | `true` |
-| `timeout` | Timeout in seconds for cluster readiness | `300` |
-
-See [action.yml](action.yml) for all available inputs.
+| `version` | KubeSolo version to install (e.g., `v0.1.7-beta`) or `latest` | `latest` |
+| `wait-for-ready` | Wait for cluster to be ready before completing | `true` |
+| `timeout` | Timeout in seconds to wait for cluster readiness | `300` |
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `kubeconfig` | Path to the kubeconfig file |
+| `kubeconfig` | Path to the kubeconfig file (`/var/lib/kubesolo/pki/admin/admin.kubeconfig`) |
 | `cluster-info` | Cluster information |
 
 ## Requirements
@@ -75,4 +72,3 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - [KubeSolo](https://github.com/portainer/kubesolo) - Ultra-lightweight Kubernetes
 - [Portainer](https://www.portainer.io/) - Container management platform
-
