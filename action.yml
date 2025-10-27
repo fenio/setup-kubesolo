@@ -89,9 +89,10 @@ runs:
         
         # Install KubeSolo
         if [ "${KUBESOLO_VERSION}" = "latest" ]; then
-          curl -sfL https://get.kubesolo.io | sudo -E sh -
+          # Don't pass version for latest, let installer determine it
+          curl -sfL https://get.kubesolo.io | sudo sh -
         else
-          curl -sfL https://get.kubesolo.io | INSTALL_KUBESOLO_VERSION="${KUBESOLO_VERSION}" sudo -E sh -
+          curl -sfL https://get.kubesolo.io | INSTALL_KUBESOLO_VERSION="${KUBESOLO_VERSION}" sudo sh -
         fi
         
         # Set kubeconfig path output
