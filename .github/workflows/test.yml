@@ -198,14 +198,25 @@ jobs:
           kubectl get storageclass
           kubectl describe storageclass
       
+      - name: Wait for storage provisioner
+        run: |
+          echo "Waiting for local-path-provisioner to be ready..."
+          kubectl wait --for=condition=available --timeout=120s deployment/local-path-provisioner -n kube-system || true
+          kubectl get pods -n kube-system | grep local-path || echo "No local-path-provisioner found"
+      
       - name: Create PVC
         run: |
+          # Get the storage class name
+          STORAGE_CLASS=$(kubectl get storageclass -o jsonpath='{.items[0].metadata.name}')
+          echo "Using storage class: ${STORAGE_CLASS}"
+          
           cat <<EOF | kubectl apply -f -
           apiVersion: v1
           kind: PersistentVolumeClaim
           metadata:
             name: test-pvc
           spec:
+            storageClassName: ${STORAGE_CLASS}
             accessModes:
               - ReadWriteOnce
             resources:
@@ -213,6 +224,8 @@ jobs:
                 storage: 1Gi
           EOF
           
+          echo "Waiting for PVC to be bound..."
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound --timeout=60s pvc/test-pvc || true
           kubectl get pvc
           kubectl describe pvc test-pvc
       
@@ -237,7 +250,7 @@ jobs:
                 claimName: test-pvc
           EOF
           
-          kubectl wait --for=condition=Ready --timeout=60s pod/test-storage-pod
+          kubectl wait --for=condition=Ready --timeout=120s pod/test-storage-pod
           kubectl logs test-storage-pod
           kubectl delete pod test-storage-pod
           kubectl delete pvc test-pvc
