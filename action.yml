@@ -39,42 +39,23 @@ runs:
       run: |
         echo "Removing conflicting container runtimes..."
         
-        # Stop and remove Docker
-        if command -v docker &> /dev/null || systemctl list-unit-files | grep -q docker || [ -S /var/run/docker.sock ]; then
-          echo "Docker detected, removing it..."
-          
-          # Stop all Docker services
-          sudo systemctl stop docker.socket 2>/dev/null || true
-          sudo systemctl stop docker 2>/dev/null || true
-          sudo systemctl disable docker.socket 2>/dev/null || true
-          sudo systemctl disable docker 2>/dev/null || true
-          
-          # Remove Docker packages
-          sudo apt-get remove -y docker docker-engine docker.io containerd runc docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || true
-          sudo apt-get purge -y docker-ce docker-ce-cli containerd.io 2>/dev/null || true
-          
-          # Remove Docker socket and runtime files
-          sudo rm -f /var/run/docker.sock
-          sudo rm -f /var/run/docker.pid
-          sudo rm -rf /var/run/docker
-          
-          echo "✓ Docker removed"
-        fi
+        # Stop all container runtime services
+        sudo systemctl stop docker.socket docker containerd podman 2>/dev/null || true
+        sudo systemctl disable docker.socket docker containerd podman 2>/dev/null || true
         
-        # Stop and remove Podman
-        if command -v podman &> /dev/null; then
-          echo "Podman detected, removing it..."
-          sudo systemctl stop podman 2>/dev/null || true
-          sudo apt-get remove -y podman 2>/dev/null || true
-          echo "✓ Podman removed"
-        fi
+        # Remove all container runtime packages
+        sudo apt-get remove -y \
+          docker docker-engine docker.io docker-ce docker-ce-cli \
+          containerd containerd.io runc \
+          podman \
+          docker-buildx-plugin docker-compose-plugin \
+          2>/dev/null || true
         
-        # Remove containerd socket if it exists
-        sudo rm -f /var/run/containerd/containerd.sock
-        sudo rm -rf /var/run/containerd
-        
-        # Clean up
+        sudo apt-get purge -y docker-ce docker-ce-cli containerd.io 2>/dev/null || true
         sudo apt-get autoremove -y 2>/dev/null || true
+        
+        # Clean up runtime files and sockets
+        sudo rm -rf /var/run/docker* /var/run/containerd /run/containerd 2>/dev/null || true
         
         echo "✓ Container runtime cleanup complete"
     
