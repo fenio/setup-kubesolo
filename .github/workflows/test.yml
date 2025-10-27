@@ -205,5 +205,117 @@ jobs:
           # List all deployments in kube-system to see what's available
           echo "All kube-system deployments:"
           kubectl get deployments -n kube-system
+      
+      - name: Test emptyDir volume
+        run: |
+          echo "Testing emptyDir volume..."
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-emptydir-pod
+          spec:
+            containers:
+            - name: test
+              image: busybox
+              command: ['sh', '-c', 'echo "Hello from emptyDir" > /data/test.txt && cat /data/test.txt && sleep 10']
+              volumeMounts:
+              - name: storage
+                mountPath: /data
+            volumes:
+            - name: storage
+              emptyDir: {}
+          EOF
           
-          echo "Note: KubeSolo local-storage option may require manual storage class setup"
+          kubectl wait --for=condition=Ready --timeout=60s pod/test-emptydir-pod
+          kubectl logs test-emptydir-pod
+          kubectl delete pod test-emptydir-pod
+          echo "✓ emptyDir volume works"
+      
+      - name: Test hostPath volume
+        run: |
+          echo "Testing hostPath volume..."
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-hostpath-pod
+          spec:
+            containers:
+            - name: test
+              image: busybox
+              command: ['sh', '-c', 'echo "Hello from hostPath" > /data/test.txt && cat /data/test.txt && ls -la /data && sleep 10']
+              volumeMounts:
+              - name: storage
+                mountPath: /data
+            volumes:
+            - name: storage
+              hostPath:
+                path: /tmp/kubesolo-test
+                type: DirectoryOrCreate
+          EOF
+          
+          kubectl wait --for=condition=Ready --timeout=60s pod/test-hostpath-pod
+          kubectl logs test-hostpath-pod
+          kubectl delete pod test-hostpath-pod
+          echo "✓ hostPath volume works"
+      
+      - name: Test storage class based PVC (if available)
+        run: |
+          # Only run this if a storage class exists
+          if kubectl get storageclass 2>/dev/null | grep -q NAME; then
+            echo "Storage class found, testing PVC..."
+            STORAGE_CLASS=$(kubectl get storageclass -o jsonpath='{.items[0].metadata.name}')
+            echo "Using storage class: ${STORAGE_CLASS}"
+            
+            cat <<EOF | kubectl apply -f -
+            apiVersion: v1
+            kind: PersistentVolumeClaim
+            metadata:
+              name: test-pvc
+            spec:
+              storageClassName: ${STORAGE_CLASS}
+              accessModes:
+                - ReadWriteOnce
+              resources:
+                requests:
+                  storage: 1Gi
+          EOF
+            
+            echo "Waiting for PVC to be bound..."
+            if kubectl wait --for=jsonpath='{.status.phase}'=Bound --timeout=60s pvc/test-pvc; then
+              echo "PVC bound successfully, testing with pod..."
+              
+              cat <<EOF | kubectl apply -f -
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: test-pvc-pod
+              spec:
+                containers:
+                - name: test
+                  image: busybox
+                  command: ['sh', '-c', 'echo "Hello from PVC" > /data/test.txt && cat /data/test.txt && sleep 10']
+                  volumeMounts:
+                  - name: storage
+                    mountPath: /data
+                volumes:
+                - name: storage
+                  persistentVolumeClaim:
+                    claimName: test-pvc
+          EOF
+              
+              kubectl wait --for=condition=Ready --timeout=60s pod/test-pvc-pod
+              kubectl logs test-pvc-pod
+              kubectl delete pod test-pvc-pod
+              kubectl delete pvc test-pvc
+              echo "✓ PVC storage works"
+            else
+              echo "PVC did not bind, skipping pod test"
+              kubectl describe pvc test-pvc
+              kubectl delete pvc test-pvc
+            fi
+          else
+            echo "No storage class available, skipping PVC test"
+            echo "Note: KubeSolo local-storage option does not automatically provision a storage class"
+          fi
