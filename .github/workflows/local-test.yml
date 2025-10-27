@@ -1,0 +1,33 @@
+name: Local Test
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test-local-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+      
+      - name: Test local action
+        uses: ./  # This uses the action from current repository
+        id: kubesolo
+      
+      - name: Verify it worked
+        run: |
+          echo "Kubeconfig: ${{ steps.kubesolo.outputs.kubeconfig }}"
+          echo "Cluster info: ${{ steps.kubesolo.outputs.cluster-info }}"
+          
+          kubectl get nodes
+          kubectl get pods -A
+          
+          # Try deploying something
+          kubectl create deployment nginx --image=nginx:alpine
+          kubectl wait --for=condition=available --timeout=120s deployment/nginx
+          kubectl get deployments
+          
+          echo "✅ Action works!"
