@@ -109,7 +109,9 @@ runs:
       env:
         TIMEOUT: ${{ inputs.timeout }}
       run: |
-        echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT}s)..."
+        # Use default timeout if not set
+        TIMEOUT_SECONDS="${TIMEOUT:-300}"
+        echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT_SECONDS}s)..."
         
         export KUBECONFIG="${{ steps.install.outputs.kubeconfig }}"
         
@@ -118,7 +120,7 @@ runs:
           current_time=$(date +%s)
           elapsed=$((current_time - start_time))
           
-          if [ $elapsed -gt ${TIMEOUT} ]; then
+          if [ $elapsed -gt ${TIMEOUT_SECONDS} ]; then
             echo "ERROR: Timeout waiting for cluster to be ready"
             exit 1
           fi
@@ -134,7 +136,7 @@ runs:
             fi
           fi
           
-          echo "  Cluster not ready yet, waiting... (${elapsed}/${TIMEOUT}s)"
+          echo "  Cluster not ready yet, waiting... (${elapsed}/${TIMEOUT_SECONDS}s)"
           sleep 5
         done
         
