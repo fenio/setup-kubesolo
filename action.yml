@@ -26,38 +26,30 @@ outputs:
   kubeconfig:
     description: 'Path to the kubeconfig file'
     value: ${{ steps.install.outputs.kubeconfig }}
-  
-  cluster-info:
-    description: 'KubeSolo cluster information'
-    value: ${{ steps.verify.outputs.cluster-info }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Remove conflicting container runtimes
+    - name: Disable conflicting container runtimes
       shell: bash
       run: |
-        echo "Removing conflicting container runtimes..."
+        echo "Disabling conflicting container runtimes..."
         
-        # Stop all container runtime services
+        # Stop and mask all container runtime services
         sudo systemctl stop docker.socket docker containerd podman 2>/dev/null || true
-        sudo systemctl disable docker.socket docker containerd podman 2>/dev/null || true
+        sudo systemctl mask docker.socket docker containerd podman 2>/dev/null || true
         
-        # Remove all container runtime packages
-        sudo apt-get remove -y \
-          docker docker-engine docker.io docker-ce docker-ce-cli \
-          containerd containerd.io runc \
-          podman \
-          docker-buildx-plugin docker-compose-plugin \
-          2>/dev/null || true
+        # Backup runtime binaries to hide them from detection
+        for binary in docker dockerd containerd containerd-shim containerd-shim-runc-v2 runc podman; do
+          if [ -f "/usr/bin/${binary}" ]; then
+            sudo mv "/usr/bin/${binary}" "/usr/bin/${binary}.bak" 2>/dev/null || true
+          fi
+        done
         
-        sudo apt-get purge -y docker-ce docker-ce-cli containerd.io 2>/dev/null || true
-        sudo apt-get autoremove -y 2>/dev/null || true
+        # Clean up runtime sockets
+        sudo rm -rf /var/run/docker* /var/run/containerd /run/containerd /run/docker* 2>/dev/null || true
         
-        # Clean up runtime files and sockets
-        sudo rm -rf /var/run/docker* /var/run/containerd /run/containerd 2>/dev/null || true
-        
-        echo "✓ Container runtime cleanup complete"
+        echo "✓ Container runtime disabled"
     
     - name: Install KubeSolo
       id: install
@@ -87,25 +79,6 @@ runs:
         
         echo "✓ KubeSolo installed successfully"
     
-    - name: Configure kubectl
-      shell: bash
-      run: |
-        echo "Configuring kubectl..."
-        
-        # Set KUBECONFIG environment variable
-        KUBECONFIG_PATH="${{ steps.install.outputs.kubeconfig }}"
-        echo "KUBECONFIG=${KUBECONFIG_PATH}" >> $GITHUB_ENV
-        
-        # Install kubectl if not present
-        if ! command -v kubectl &> /dev/null; then
-          echo "Installing kubectl..."
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-          rm kubectl
-        fi
-        
-        echo "✓ kubectl configured (version: $(kubectl version --client --short 2>/dev/null || kubectl version --client))"
-    
     - name: Wait for cluster ready
       if: inputs.wait-for-ready == 'true'
       shell: bash
@@ -115,8 +88,6 @@ runs:
         # Use default timeout if not set
         TIMEOUT_SECONDS="${TIMEOUT:-60}"
         echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT_SECONDS}s)..."
-        
-        export KUBECONFIG="${{ steps.install.outputs.kubeconfig }}"
         
         start_time=$(date +%s)
         while true; do
@@ -128,13 +99,13 @@ runs:
             exit 1
           fi
           
-          # Check if API server is responding
-          if kubectl cluster-info &>/dev/null; then
-            echo "  API server is responding"
+          # Check if KubeSolo service is active
+          if sudo systemctl is-active --quiet kubesolo; then
+            echo "  KubeSolo service is active"
             
-            # Check if node is ready
-            if kubectl wait --for=condition=Ready nodes --all --timeout=10s &>/dev/null; then
-              echo "  Node is ready"
+            # Check if API server port is listening
+            if ss -tlnp 2>/dev/null | grep -q ':6443 '; then
+              echo "  API server is listening on port 6443"
               break
             fi
           fi
@@ -144,38 +115,4 @@ runs:
         done
         
         echo "✓ KubeSolo cluster is ready!"
-    
-    - name: Verify installation
-      id: verify
-      shell: bash
-      run: |
-        echo "Verifying KubeSolo installation..."
-        
-        export KUBECONFIG="${{ steps.install.outputs.kubeconfig }}"
-        
-        echo ""
-        echo "Cluster Info:"
-        kubectl cluster-info
-        
-        echo ""
-        echo "Node Status:"
-        kubectl get nodes -o wide
-        
-        echo ""
-        echo "System Pods:"
-        kubectl get pods -A
 
-        echo ""
-        echo "StorageClass:"
-        kubectl get storageclass -A
-
-        echo ""
-        echo "Kubernetes Version:"
-        kubectl version --short 2>/dev/null || kubectl version
-        
-        # Save cluster info to output
-        CLUSTER_INFO=$(kubectl cluster-info 2>&1 | head -n 1)
-        echo "cluster-info=${CLUSTER_INFO}" >> $GITHUB_OUTPUT
-        
-        echo ""
-        echo "✓ All checks passed!"

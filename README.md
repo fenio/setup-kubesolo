@@ -5,9 +5,9 @@ A GitHub Action for installing and configuring [KubeSolo](https://github.com/por
 ## Features
 
 - ✅ Automatic installation of KubeSolo
-- ✅ Automatic removal of conflicting container runtimes (Docker, Podman, containerd)
-- ✅ kubectl configured and ready to use
-- ✅ Waits for cluster readiness
+- ✅ Fast disabling of conflicting container runtimes (Docker, Podman, containerd)
+- ✅ Waits for cluster readiness (checks systemd service and API server port)
+- ✅ Outputs kubeconfig path for easy integration
 
 ## Quick Start
 
@@ -23,7 +23,15 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Setup KubeSolo
+        id: kubesolo
         uses: fenio/setup-kubesolo@v1
+      
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          rm kubectl
+          echo "KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}" >> $GITHUB_ENV
       
       - name: Deploy and test
         run: |
@@ -37,21 +45,20 @@ jobs:
 |-------|-------------|---------|
 | `version` | KubeSolo version to install (e.g., `v0.1.7-beta`) or `latest` | `latest` |
 | `wait-for-ready` | Wait for cluster to be ready before completing | `true` |
-| `timeout` | Timeout in seconds to wait for cluster readiness | `300` |
+| `timeout` | Timeout in seconds to wait for cluster readiness | `60` |
 
 ## Outputs
 
 | Output | Description |
 |--------|-------------|
 | `kubeconfig` | Path to the kubeconfig file (`/var/lib/kubesolo/pki/admin/admin.kubeconfig`) |
-| `cluster-info` | Cluster information |
 
 ## Requirements
 
 - Runs on `ubuntu-latest` (or any Linux-based runner)
 - Requires `sudo` access (provided by default in GitHub Actions)
 
-**Note:** The action automatically removes Docker and other container runtimes that conflict with KubeSolo. This is safe on ephemeral GitHub Actions runners.
+**Note:** The action masks and disables Docker and other container runtimes that conflict with KubeSolo by stopping services and renaming binaries. This is much faster than package removal and works perfectly on ephemeral GitHub Actions runners.
 
 ## Troubleshooting
 
