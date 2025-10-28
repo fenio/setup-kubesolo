@@ -24,16 +24,16 @@ jobs:
       
       - name: Setup KubeSolo
         id: kubesolo
-        uses: fenio/setup-kubesolo@v1
+        uses: fenio/setup-kubesolo@v2
       
-      - name: Install kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-          rm kubectl
-          echo "KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}" >> $GITHUB_ENV
+      - name: Setup kubectl
+        uses: fenio/setup-krew@v1
+        env:
+          KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
       
       - name: Deploy and test
+        env:
+          KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
         run: |
           kubectl apply -f k8s/
           kubectl wait --for=condition=available --timeout=60s deployment/my-app
@@ -66,7 +66,7 @@ If the cluster doesn't become ready in time, increase the timeout:
 
 ```yaml
 - name: Setup KubeSolo
-  uses: fenio/setup-kubesolo@v1
+  uses: fenio/setup-kubesolo@v2
   with:
     timeout: '600'  # 10 minutes
 ```
