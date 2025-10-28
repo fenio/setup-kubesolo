@@ -164,7 +164,11 @@ runs:
         echo ""
         echo "System Pods:"
         kubectl get pods -A
-        
+
+        echo ""
+        echo "StorageClass:"
+        kubectl get storageclass -A
+
         echo ""
         echo "Kubernetes Version:"
         kubectl version --short 2>/dev/null || kubectl version
