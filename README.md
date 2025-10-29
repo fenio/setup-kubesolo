@@ -9,6 +9,7 @@ A GitHub Action for installing and configuring [KubeSolo](https://github.com/por
 - ✅ Waits for cluster readiness (verifies API server connectivity and node status)
 - ✅ Outputs kubeconfig path for easy integration
 - ✅ Works with kubectl pre-installed on GitHub Actions runners
+- ✅ Caches KubeSolo binary for faster subsequent runs
 
 ## Quick Start
 
@@ -55,6 +56,15 @@ jobs:
 - Requires `sudo` access (provided by default in GitHub Actions)
 
 **Note:** The action masks and disables Docker and other container runtimes that conflict with KubeSolo by stopping services and renaming binaries. This is much faster than package removal and works perfectly on ephemeral GitHub Actions runners.
+
+## Performance
+
+The action includes built-in caching of the KubeSolo binary using GitHub Actions cache. On cache hits, the binary download is skipped, significantly reducing setup time. The cache is keyed by:
+- Operating system
+- CPU architecture  
+- KubeSolo version
+
+This means subsequent runs with the same configuration will be much faster.
 
 ## Troubleshooting
 

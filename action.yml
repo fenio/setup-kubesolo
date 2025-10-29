@@ -25,11 +25,43 @@ inputs:
 outputs:
   kubeconfig:
     description: 'Path to the kubeconfig file'
-    value: ${{ steps.install.outputs.kubeconfig }}
+    value: ${{ steps.configure.outputs.kubeconfig }}
 
 runs:
   using: 'composite'
   steps:
+    - name: Determine KubeSolo version
+      id: version
+      shell: bash
+      env:
+        KUBESOLO_VERSION: ${{ inputs.version }}
+      run: |
+        if [ "${KUBESOLO_VERSION}" = "latest" ]; then
+          # Fetch the latest version from GitHub API
+          LATEST_VERSION=$(curl -sfL https://api.github.com/repos/portainer/kubesolo/releases/latest | grep -o '"tag_name": *"[^"]*"' | sed 's/"tag_name": *"\(.*\)"/\1/')
+          echo "resolved-version=${LATEST_VERSION}" >> $GITHUB_OUTPUT
+          echo "Using latest version: ${LATEST_VERSION}"
+        else
+          echo "resolved-version=${KUBESOLO_VERSION}" >> $GITHUB_OUTPUT
+          echo "Using specified version: ${KUBESOLO_VERSION}"
+        fi
+        
+        # Determine architecture for cache key
+        ARCH=$(uname -m)
+        case $ARCH in
+          x86_64) ARCH="amd64" ;;
+          aarch64) ARCH="arm64" ;;
+          armv7l) ARCH="arm" ;;
+        esac
+        echo "arch=${ARCH}" >> $GITHUB_OUTPUT
+    
+    - name: Cache KubeSolo binary
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/kubesolo
+        key: kubesolo-${{ runner.os }}-${{ steps.version.outputs.arch }}-${{ steps.version.outputs.resolved-version }}
+    
     - name: Disable conflicting container runtimes
       shell: bash
       run: |
@@ -51,40 +83,83 @@ runs:
         
         echo "✓ Container runtime disabled"
     
+    - name: Download KubeSolo binary
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        KUBESOLO_VERSION: ${{ steps.version.outputs.resolved-version }}
+        ARCH: ${{ steps.version.outputs.arch }}
+      run: |
+        echo "Downloading KubeSolo ${KUBESOLO_VERSION}..."
+        
+        # Detect libc type
+        LIBC_SUFFIX=""
+        if [ -f /lib/ld-musl-*.so.1 ] || [ -f /usr/lib/ld-musl-*.so.1 ]; then
+          if [ "$ARCH" = "amd64" ] || [ "$ARCH" = "arm64" ]; then
+            LIBC_SUFFIX="-musl"
+          fi
+        fi
+        
+        # Download binary
+        mkdir -p ~/.cache/kubesolo
+        BIN_URL="https://github.com/portainer/kubesolo/releases/download/${KUBESOLO_VERSION}/kubesolo-${KUBESOLO_VERSION}-linux-${ARCH}${LIBC_SUFFIX}.tar.gz"
+        
+        echo "Downloading from: ${BIN_URL}"
+        curl -sfL "$BIN_URL" -o ~/.cache/kubesolo/kubesolo.tar.gz
+        
+        # Extract binary
+        tar -xzf ~/.cache/kubesolo/kubesolo.tar.gz -C ~/.cache/kubesolo/
+        rm ~/.cache/kubesolo/kubesolo.tar.gz
+        
+        echo "✓ KubeSolo binary downloaded and cached"
+    
     - name: Install KubeSolo
       id: install
       shell: bash
       env:
-        KUBESOLO_VERSION: ${{ inputs.version }}
         LOCAL_STORAGE: true
       run: |
-        # Use default version if not set
-        KUBESOLO_VERSION="${KUBESOLO_VERSION:-latest}"
-        echo "Installing KubeSolo ${KUBESOLO_VERSION}..."
+        echo "Installing KubeSolo from cache..."
         
-        # Install KubeSolo
-        if [ "${KUBESOLO_VERSION}" = "latest" ]; then
-          # Don't pass version for latest, let installer determine it
-          curl -sfL https://get.kubesolo.io | sudo sh -
-        else
-          curl -sfL https://get.kubesolo.io | INSTALL_KUBESOLO_VERSION="${KUBESOLO_VERSION}" sudo sh -
-        fi
+        # Install binary
+        sudo install -m 755 ~/.cache/kubesolo/kubesolo /usr/local/bin/kubesolo
         
-        # Set kubeconfig path output
+        # Run the binary with install flag to set up systemd service
+        sudo /usr/local/bin/kubesolo install
+        
+        echo "✓ KubeSolo installed successfully"
+    
+    - name: Configure KubeSolo
+      id: configure
+      shell: bash
+      run: |
+        # Wait for kubeconfig to be created
         KUBECONFIG_PATH="/var/lib/kubesolo/pki/admin/admin.kubeconfig"
-        echo "kubeconfig=${KUBECONFIG_PATH}" >> $GITHUB_OUTPUT
+        
+        timeout=30
+        elapsed=0
+        while [ ! -f "${KUBECONFIG_PATH}" ] && [ $elapsed -lt $timeout ]; do
+          sleep 1
+          elapsed=$((elapsed + 1))
+        done
+        
+        if [ ! -f "${KUBECONFIG_PATH}" ]; then
+          echo "ERROR: Kubeconfig not found at ${KUBECONFIG_PATH}"
+          exit 1
+        fi
         
         # Make kubeconfig accessible
         sudo chmod 644 "${KUBECONFIG_PATH}"
         
-        echo "✓ KubeSolo installed successfully"
+        echo "kubeconfig=${KUBECONFIG_PATH}" >> $GITHUB_OUTPUT
+        echo "✓ KubeSolo configured successfully"
     
     - name: Wait for cluster ready
       if: inputs.wait-for-ready == 'true'
       shell: bash
       env:
         TIMEOUT: ${{ inputs.timeout }}
-        KUBECONFIG: ${{ steps.install.outputs.kubeconfig }}
+        KUBECONFIG: ${{ steps.configure.outputs.kubeconfig }}
       run: |
         # Use default timeout if not set
         TIMEOUT_SECONDS="${TIMEOUT:-60}"
