@@ -84,6 +84,7 @@ runs:
       shell: bash
       env:
         TIMEOUT: ${{ inputs.timeout }}
+        KUBECONFIG: ${{ steps.install.outputs.kubeconfig }}
       run: |
         # Use default timeout if not set
         TIMEOUT_SECONDS="${TIMEOUT:-60}"
@@ -99,20 +100,30 @@ runs:
             exit 1
           fi
           
-          # Check if KubeSolo service is active
-          if sudo systemctl is-active --quiet kubesolo; then
-            echo "  KubeSolo service is active"
+          # Check if kubectl can connect to the API server
+          if kubectl cluster-info &>/dev/null; then
+            echo "  API server is accessible"
             
-            # Check if API server port is listening
-            if ss -tlnp 2>/dev/null | grep -q ':6443 '; then
-              echo "  API server is listening on port 6443"
-              break
+            # Check if all nodes are ready
+            if kubectl wait --for=condition=Ready nodes --all --timeout=5s &>/dev/null; then
+              echo "  All nodes are ready"
+              
+              # Check if core system pods are running
+              if kubectl get pods -n kube-system &>/dev/null; then
+                running_pods=$(kubectl get pods -n kube-system --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+                total_pods=$(kubectl get pods -n kube-system --no-headers 2>/dev/null | wc -l || echo "0")
+                echo "  System pods: ${running_pods}/${total_pods} running"
+                
+                # Check if at least some core pods are running
+                if [ "$running_pods" -gt 0 ]; then
+                  echo "✓ KubeSolo cluster is ready!"
+                  break
+                fi
+              fi
             fi
           fi
           
           echo "  Cluster not ready yet, waiting... (${elapsed}/${TIMEOUT_SECONDS}s)"
           sleep 5
         done
-        
-        echo "✓ KubeSolo cluster is ready!"
 

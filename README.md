@@ -6,8 +6,9 @@ A GitHub Action for installing and configuring [KubeSolo](https://github.com/por
 
 - ✅ Automatic installation of KubeSolo
 - ✅ Fast disabling of conflicting container runtimes (Docker, Podman, containerd)
-- ✅ Waits for cluster readiness (checks systemd service and API server port)
+- ✅ Waits for cluster readiness (verifies API server connectivity and node status)
 - ✅ Outputs kubeconfig path for easy integration
+- ✅ Works with kubectl pre-installed on GitHub Actions runners
 
 ## Quick Start
 
@@ -25,11 +26,6 @@ jobs:
       - name: Setup KubeSolo
         id: kubesolo
         uses: fenio/setup-kubesolo@v2
-      
-      - name: Setup kubectl
-        uses: fenio/setup-krew@v1
-        env:
-          KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
       
       - name: Deploy and test
         env:
