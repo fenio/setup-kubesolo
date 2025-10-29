@@ -148,6 +148,18 @@ runs:
         sudo systemctl enable kubesolo
         sudo systemctl start kubesolo
         
+        # Check if service started successfully
+        sleep 2
+        if ! sudo systemctl is-active --quiet kubesolo; then
+          echo "ERROR: KubeSolo service failed to start"
+          echo "Service status:"
+          sudo systemctl status kubesolo --no-pager || true
+          echo ""
+          echo "Recent logs:"
+          sudo journalctl -u kubesolo -n 50 --no-pager || true
+          exit 1
+        fi
+        
         echo "✓ KubeSolo installed successfully"
     
     - name: Configure KubeSolo
