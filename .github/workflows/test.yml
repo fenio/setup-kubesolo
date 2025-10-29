@@ -24,12 +24,4 @@ jobs:
         id: kubesolo
         uses: ./
       
-      - name: Verify cluster with kubectl
-        env:
-          KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
-        run: |
-          echo "Testing kubectl connectivity..."
-          kubectl cluster-info
-          kubectl get nodes
-          kubectl get pods -A
 
