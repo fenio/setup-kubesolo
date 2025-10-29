@@ -157,15 +157,28 @@ runs:
         # Wait for kubeconfig to be created
         KUBECONFIG_PATH="/var/lib/kubesolo/pki/admin/admin.kubeconfig"
         
-        timeout=30
+        echo "Waiting for KubeSolo to initialize..."
+        timeout=60
         elapsed=0
         while [ ! -f "${KUBECONFIG_PATH}" ] && [ $elapsed -lt $timeout ]; do
+          if [ $((elapsed % 5)) -eq 0 ]; then
+            echo "  Waiting for kubeconfig... (${elapsed}/${timeout}s)"
+            # Check service status
+            if ! sudo systemctl is-active --quiet kubesolo; then
+              echo "  KubeSolo service is not active, checking status:"
+              sudo systemctl status kubesolo --no-pager || true
+            fi
+          fi
           sleep 1
           elapsed=$((elapsed + 1))
         done
         
         if [ ! -f "${KUBECONFIG_PATH}" ]; then
           echo "ERROR: Kubeconfig not found at ${KUBECONFIG_PATH}"
+          echo "KubeSolo service status:"
+          sudo systemctl status kubesolo --no-pager || true
+          echo "KubeSolo logs:"
+          sudo journalctl -u kubesolo -n 50 --no-pager || true
           exit 1
         fi
         
