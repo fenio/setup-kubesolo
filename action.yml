@@ -131,7 +131,7 @@ runs:
         After=network.target
         
         [Service]
-        ExecStart=/usr/local/bin/kubesolo --path=/var/lib/kubesolo --local-storage=true
+        ExecStart=/usr/local/bin/kubesolo --path=/var/lib/kubesolo --local-storage
         Restart=always
         RestartSec=3
         OOMScoreAdjust=-500
