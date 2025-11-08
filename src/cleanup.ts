@@ -51,11 +51,23 @@ async function stopKubeSolo(): Promise<void> {
     core.info('  Disabled KubeSolo service');
   }
   
-  // Remove KubeSolo files
-  await exec.exec('sudo', ['rm', '-rf', '/var/lib/kubesolo', '/usr/local/bin/kubesolo', '/etc/systemd/system/kubesolo.service'], { ignoreReturnCode: true });
+  // Remove KubeSolo files one by one for better error visibility
+  const filesToRemove = [
+    '/var/lib/kubesolo',
+    '/usr/local/bin/kubesolo',
+    '/etc/systemd/system/kubesolo.service'
+  ];
+  
+  for (const file of filesToRemove) {
+    const result = await exec.exec('sudo', ['rm', '-rf', file], { ignoreReturnCode: true, silent: true });
+    if (result === 0) {
+      core.info(`  Removed ${file}`);
+    }
+  }
+  
   await exec.exec('sudo', ['systemctl', 'daemon-reload'], { ignoreReturnCode: true });
   
-  core.info('  Removed KubeSolo files');
+  core.info('  KubeSolo cleanup complete');
 }
 
 async function restoreContainerRuntimes(): Promise<void> {
@@ -82,23 +94,35 @@ async function restoreServices(): Promise<void> {
   
   const services = ['docker.socket', 'docker', 'containerd', 'podman'];
   
-  // Unmask services
+  // Unmask all services first
   for (const service of services) {
-    await exec.exec('sudo', ['systemctl', 'unmask', service], { ignoreReturnCode: true });
+    await exec.exec('sudo', ['systemctl', 'unmask', service], { ignoreReturnCode: true, silent: true });
   }
   
   core.info('  Unmasked services');
   
-  // Try to restart services that exist
+  // Reload systemd to pick up changes
+  await exec.exec('sudo', ['systemctl', 'daemon-reload'], { ignoreReturnCode: true, silent: true });
+  
+  // Try to start services - systemctl will skip if they don't exist
   for (const service of services) {
-    const exists = await exec.exec('bash', ['-c', `systemctl list-unit-files | grep -q "^${service}"`], { 
+    const result = await exec.exec('sudo', ['systemctl', 'start', service], { 
       ignoreReturnCode: true,
       silent: true 
     });
     
-    if (exists === 0) {
-      await exec.exec('sudo', ['systemctl', 'start', service], { ignoreReturnCode: true, silent: true });
-      core.info(`  Restarted ${service}`);
+    if (result === 0) {
+      core.info(`  Started ${service}`);
+      
+      // Verify it's actually running
+      const isActive = await exec.exec('sudo', ['systemctl', 'is-active', service], { 
+        ignoreReturnCode: true,
+        silent: true 
+      });
+      
+      if (isActive !== 0) {
+        core.warning(`  ${service} started but not active - may not have been installed`);
+      }
     }
   }
 }
