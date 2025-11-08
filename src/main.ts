@@ -76,22 +76,124 @@ async function installKubeSolo(version: string): Promise<void> {
   try {
     core.info(`Installing KubeSolo ${version}...`);
     
-    // Download and execute installer script
-    let installCmd: string;
+    // Resolve version if 'latest'
+    let actualVersion = version;
     if (version === 'latest') {
-      installCmd = 'curl -sfL https://get.kubesolo.io | sudo sh -';
-    } else {
-      installCmd = `curl -sfL https://get.kubesolo.io | INSTALL_KUBESOLO_VERSION="${version}" sudo sh -`;
+      core.info('Resolving latest version...');
+      const versionOutput: string[] = [];
+      await exec.exec('bash', ['-c', 'curl -sL https://api.github.com/repos/portainer/kubesolo/releases/latest | grep \'"tag_name"\' | cut -d\'"\' -f4'], {
+        listeners: {
+          stdout: (data: Buffer) => versionOutput.push(data.toString())
+        }
+      });
+      actualVersion = versionOutput.join('').trim();
+      core.info(`  Latest version: ${actualVersion}`);
     }
     
-    await exec.exec('bash', ['-c', installCmd]);
+    // Detect architecture
+    const archOutput: string[] = [];
+    await exec.exec('uname', ['-m'], {
+      listeners: {
+        stdout: (data: Buffer) => archOutput.push(data.toString())
+      }
+    });
+    const arch = archOutput.join('').trim();
     
-    // Set kubeconfig path output
+    // Map architecture to binary name
+    let binaryArch: string;
+    switch (arch) {
+      case 'x86_64':
+        binaryArch = 'amd64';
+        break;
+      case 'aarch64':
+        binaryArch = 'arm64';
+        break;
+      case 'armv7l':
+        binaryArch = 'arm';
+        break;
+      default:
+        throw new Error(`Unsupported architecture: ${arch}`);
+    }
+    
+    core.info(`  Architecture: ${arch} -> ${binaryArch}`);
+    
+    // Download binary
+    const downloadUrl = `https://github.com/portainer/kubesolo/releases/download/${actualVersion}/kubesolo-${actualVersion}-linux-${binaryArch}.tar.gz`;
+    core.info(`  Downloading from: ${downloadUrl}`);
+    
+    await exec.exec('curl', ['-sfL', downloadUrl, '-o', '/tmp/kubesolo.tar.gz']);
+    
+    // Extract binary
+    core.info('  Extracting binary...');
+    await exec.exec('tar', ['-xzf', '/tmp/kubesolo.tar.gz', '-C', '/tmp']);
+    
+    // Install binary
+    core.info('  Installing binary to /usr/local/bin/kubesolo...');
+    await exec.exec('sudo', ['mv', '/tmp/kubesolo', '/usr/local/bin/kubesolo']);
+    await exec.exec('sudo', ['chmod', '+x', '/usr/local/bin/kubesolo']);
+    
+    // Create data directory
+    await exec.exec('sudo', ['mkdir', '-p', '/var/lib/kubesolo']);
+    
+    // Create systemd service
+    core.info('  Creating systemd service...');
+    const serviceContent = `[Unit]
+Description=KubeSolo - Lightweight Kubernetes
+Documentation=https://github.com/portainer/kubesolo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+Restart=on-failure
+RestartSec=5s
+ExecStart=/usr/local/bin/kubesolo --path=/var/lib/kubesolo
+KillMode=process
+Delegate=yes
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+
+[Install]
+WantedBy=multi-user.target
+`;
+    
+    await exec.exec('bash', ['-c', `echo '${serviceContent}' | sudo tee /etc/systemd/system/kubesolo.service > /dev/null`]);
+    
+    // Reload systemd and start service
+    core.info('  Starting KubeSolo service...');
+    await exec.exec('sudo', ['systemctl', 'daemon-reload']);
+    await exec.exec('sudo', ['systemctl', 'enable', 'kubesolo']);
+    await exec.exec('sudo', ['systemctl', 'start', 'kubesolo']);
+    
+    // Clean up
+    await exec.exec('rm', ['-f', '/tmp/kubesolo.tar.gz']);
+    
+    // Wait a moment for kubeconfig to be created
+    core.info('  Waiting for kubeconfig to be created...');
+    let kubeconfigExists = false;
     const kubeconfigPath = '/var/lib/kubesolo/pki/admin/admin.kubeconfig';
-    core.setOutput('kubeconfig', kubeconfigPath);
     
-    // Make kubeconfig accessible
-    await exec.exec('sudo', ['chmod', '644', kubeconfigPath]);
+    for (let i = 0; i < 30; i++) {
+      try {
+        await fs.access(kubeconfigPath);
+        kubeconfigExists = true;
+        break;
+      } catch {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    if (kubeconfigExists) {
+      // Make kubeconfig accessible
+      await exec.exec('sudo', ['chmod', '644', kubeconfigPath]);
+      core.setOutput('kubeconfig', kubeconfigPath);
+      core.info(`  Kubeconfig ready at: ${kubeconfigPath}`);
+    } else {
+      core.warning('Kubeconfig not found yet, it may be created during cluster startup');
+      core.setOutput('kubeconfig', kubeconfigPath);
+    }
     
     core.info('✓ KubeSolo installed successfully');
   } catch (error) {
