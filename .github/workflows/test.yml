@@ -140,12 +140,13 @@ jobs:
           echo "containerd_active=$(systemctl is-active containerd || echo 'inactive')" >> $GITHUB_OUTPUT
         
       - name: Setup KubeSolo
+        id: kubesolo2
         uses: ./
         
       - name: Dummy user workload
         run: |
           echo "User would run their tests here"
-          export KUBECONFIG=/etc/kubesolo/kubeconfig
+          export KUBECONFIG=${{ steps.kubesolo2.outputs.kubeconfig }}
           kubectl get nodes
         
       # The post-cleanup runs automatically here
