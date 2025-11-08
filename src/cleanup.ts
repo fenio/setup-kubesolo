@@ -95,34 +95,48 @@ async function restoreServices(): Promise<void> {
   const services = ['docker.socket', 'docker', 'containerd', 'podman'];
   
   // Unmask all services first
+  core.info('  Unmasking services...');
   for (const service of services) {
-    await exec.exec('sudo', ['systemctl', 'unmask', service], { ignoreReturnCode: true, silent: true });
+    const result = await exec.exec('sudo', ['systemctl', 'unmask', service], { 
+      ignoreReturnCode: true,
+      silent: false  // Show output for debugging
+    });
+    if (result === 0) {
+      core.info(`    Unmasked ${service}`);
+    }
   }
   
-  core.info('  Unmasked services');
-  
-  // Reload systemd to pick up changes
-  await exec.exec('sudo', ['systemctl', 'daemon-reload'], { ignoreReturnCode: true, silent: true });
+  // Reload systemd to pick up changes - CRITICAL after unmasking
+  core.info('  Reloading systemd daemon...');
+  await exec.exec('sudo', ['systemctl', 'daemon-reload'], { 
+    ignoreReturnCode: true,
+    silent: false 
+  });
   
   // Try to start services - systemctl will skip if they don't exist
+  core.info('  Starting services...');
   for (const service of services) {
     const result = await exec.exec('sudo', ['systemctl', 'start', service], { 
       ignoreReturnCode: true,
-      silent: true 
+      silent: false  // Show output for debugging
     });
     
     if (result === 0) {
-      core.info(`  Started ${service}`);
-      
       // Verify it's actually running
       const isActive = await exec.exec('sudo', ['systemctl', 'is-active', service], { 
         ignoreReturnCode: true,
         silent: true 
       });
       
-      if (isActive !== 0) {
-        core.warning(`  ${service} started but not active - may not have been installed`);
+      if (isActive === 0) {
+        core.info(`    ${service} is active and running`);
+      } else {
+        core.warning(`    ${service} started but is not active - may not be installed`);
       }
+    } else {
+      core.warning(`    Failed to start ${service} - may not be installed`);
     }
   }
+  
+  core.info('  Service restoration complete');
 }

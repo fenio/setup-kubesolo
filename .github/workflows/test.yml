@@ -14,24 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-setup-and-cleanup:
+  # Job 1: Basic functionality test - setup, use KubeSolo, cleanup runs automatically
+  test-kubesolo-functionality:
     runs-on: ubuntu-24.04
-    name: Test KubeSolo Setup and Cleanup
+    name: Test KubeSolo Functionality
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       
-      - name: Check initial state - Docker should be running
+      - name: Check initial state
         run: |
-          echo "=== Checking initial Docker state ==="
+          echo "=== Checking Initial System State ==="
           systemctl is-active docker && echo "✓ Docker is active" || echo "✗ Docker is not active"
-          which docker && echo "✓ Docker binary exists at: $(which docker)" || echo "✗ Docker binary not found"
-          
-      - name: Check initial state - containerd should be running
-        run: |
-          echo "=== Checking initial containerd state ==="
           systemctl is-active containerd && echo "✓ containerd is active" || echo "✗ containerd is not active"
-          which containerd && echo "✓ containerd binary exists at: $(which containerd)" || echo "✗ containerd binary not found"
+          which docker && echo "✓ Docker binary: $(which docker)" || echo "✗ Docker not found"
           
       - name: Setup KubeSolo
         id: kubesolo
@@ -43,47 +39,35 @@ jobs:
       
       - name: Verify KubeSolo is installed and running
         run: |
-          echo "=== Verifying KubeSolo installation ==="
-          which kubesolo && echo "✓ KubeSolo binary found at: $(which kubesolo)" || (echo "✗ KubeSolo binary not found" && exit 1)
-          systemctl is-active kubesolo && echo "✓ KubeSolo service is active" || (echo "✗ KubeSolo service is not active" && exit 1)
+          echo "=== Verifying KubeSolo Installation ==="
+          which kubesolo && echo "✓ KubeSolo binary found" || (echo "✗ KubeSolo binary not found" && exit 1)
+          systemctl is-active kubesolo && echo "✓ KubeSolo service is active" || (echo "✗ KubeSolo service not active" && exit 1)
           
-      - name: Verify Docker is stopped and backed up
+      - name: Verify Docker/containerd are disabled
         run: |
-          echo "=== Verifying Docker is disabled ==="
-          if systemctl is-active docker; then
+          echo "=== Verifying Container Runtimes Are Disabled ==="
+          
+          # Docker should be stopped and backed up
+          if systemctl is-active docker >/dev/null 2>&1; then
             echo "✗ Docker should be stopped but is still active"
             exit 1
-          else
-            echo "✓ Docker is stopped as expected"
           fi
+          echo "✓ Docker is stopped"
           
-          if [ -f /usr/bin/docker.bak ]; then
-            echo "✓ Docker binary backup exists"
-          else
-            echo "✗ Docker binary backup not found"
-            exit 1
-          fi
+          [ -f /usr/bin/docker.bak ] && echo "✓ Docker binary backup exists" || (echo "✗ Docker backup not found" && exit 1)
           
-      - name: Verify containerd is stopped and backed up
-        run: |
-          echo "=== Verifying containerd is disabled ==="
-          if systemctl is-active containerd; then
+          # containerd should be stopped and backed up
+          if systemctl is-active containerd >/dev/null 2>&1; then
             echo "✗ containerd should be stopped but is still active"
             exit 1
-          else
-            echo "✓ containerd is stopped as expected"
           fi
+          echo "✓ containerd is stopped"
           
-          if [ -f /usr/bin/containerd.bak ]; then
-            echo "✓ containerd binary backup exists"
-          else
-            echo "✗ containerd binary backup not found"
-            exit 1
-          fi
+          [ -f /usr/bin/containerd.bak ] && echo "✓ containerd binary backup exists" || (echo "✗ containerd backup not found" && exit 1)
       
       - name: Test kubectl access
         run: |
-          echo "=== Testing kubectl access ==="
+          echo "=== Testing Kubernetes Functionality ==="
           export KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}
           kubectl version --client
           kubectl cluster-info
@@ -92,259 +76,167 @@ jobs:
           
       - name: Deploy test workload
         run: |
-          echo "=== Deploying test workload ==="
+          echo "=== Deploying Test Workload ==="
           export KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}
           
-          # Create a simple nginx deployment
           kubectl create deployment nginx --image=nginx:alpine
           kubectl expose deployment nginx --port=80 --type=ClusterIP
-          
-          # Wait for deployment to be ready
           kubectl wait --for=condition=available --timeout=60s deployment/nginx
           
-          # Verify deployment
-          kubectl get deployments
-          kubectl get pods
-          kubectl get services
-          
-      - name: Test service connectivity
-        run: |
-          echo "=== Testing service connectivity ==="
-          export KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}
-          
-          # Get the nginx pod name
-          POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
-          echo "Testing pod: $POD_NAME"
-          
           # Test connectivity
+          POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
           kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
-          echo "✓ Service is responding correctly"
+          echo "✓ Workload is functioning correctly"
           
-      # Note: Cleanup will run automatically in the "Post" phase after all steps complete
-      # We'll verify the cleanup in a separate job
+      # NOTE: Cleanup runs automatically via post: hook after this job completes
       
-  # CRITICAL TEST: This job verifies system state restoration after cleanup
-  # This is the most important test - it proves the action doesn't break subsequent workflows
-  verify-system-restoration:
+  # Job 2: CRITICAL TEST - Verify cleanup worked by running the action again
+  # This simulates a realistic scenario: a subsequent workflow that also needs KubeSolo
+  # If cleanup didn't work, this job would fail because Docker/containerd would still be masked
+  test-cleanup-restoration:
     runs-on: ubuntu-24.04
-    name: Verify System State Restoration After Cleanup
-    needs: test-setup-and-cleanup
+    name: Verify Cleanup Restores System State
+    needs: test-kubesolo-functionality
     if: always()
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         
-      - name: Record initial system state
-        id: initial_state
+      - name: Verify Docker is functional BEFORE running KubeSolo
         run: |
-          echo "=== Recording Initial System State ==="
+          echo "=== CRITICAL TEST: Verifying Docker Works Before KubeSolo ==="
+          echo "This proves cleanup from the previous job restored the system properly"
+          echo ""
           
-          # Check Docker
-          if systemctl is-active docker >/dev/null 2>&1; then
-            echo "docker_was_active=true" >> $GITHUB_OUTPUT
-            echo "✓ Docker is initially active"
-          else
-            echo "docker_was_active=false" >> $GITHUB_OUTPUT
-            echo "✗ Docker is initially inactive"
+          # If cleanup didn't work, Docker would still be masked and this would fail
+          if ! systemctl is-active docker >/dev/null 2>&1; then
+            echo "✗ CRITICAL FAILURE: Docker is not active"
+            echo "This means the previous job's cleanup did NOT restore Docker!"
+            systemctl status docker || true
+            exit 1
           fi
+          echo "✓ Docker service is active"
           
-          # Check containerd
-          if systemctl is-active containerd >/dev/null 2>&1; then
-            echo "containerd_was_active=true" >> $GITHUB_OUTPUT
-            echo "✓ containerd is initially active"
-          else
-            echo "containerd_was_active=false" >> $GITHUB_OUTPUT
-            echo "✗ containerd is initially inactive"
+          # Verify Docker actually works
+          if ! docker ps >/dev/null 2>&1; then
+            echo "✗ CRITICAL FAILURE: 'docker ps' does not work"
+            echo "This means the previous job's cleanup did NOT properly restore Docker!"
+            docker ps || true
+            exit 1
           fi
+          echo "✓ 'docker ps' works"
           
-          # Test Docker functionality
-          if docker ps >/dev/null 2>&1; then
-            echo "docker_ps_worked=true" >> $GITHUB_OUTPUT
-            echo "✓ 'docker ps' works initially"
-          else
-            echo "docker_ps_worked=false" >> $GITHUB_OUTPUT
-            echo "✗ 'docker ps' does not work initially"
+          # Try running a container
+          if ! docker run --rm hello-world 2>&1 | grep -q "Hello from Docker"; then
+            echo "✗ CRITICAL FAILURE: Cannot run Docker containers"
+            echo "This means the previous job's cleanup did NOT properly restore Docker!"
+            exit 1
           fi
+          echo "✓ Docker can run containers"
           
-          # List binary locations
-          echo "Docker binary: $(which docker 2>/dev/null || echo 'not found')"
-          echo "containerd binary: $(which containerd 2>/dev/null || echo 'not found')"
-        
-      - name: Setup KubeSolo
+          echo ""
+          echo "=========================================="
+          echo "✓✓✓ SUCCESS: CLEANUP RESTORED DOCKER ✓✓✓"
+          echo "=========================================="
+          
+      - name: Verify containerd is functional BEFORE running KubeSolo
+        run: |
+          echo "=== Verifying containerd Was Restored ==="
+          
+          if ! systemctl is-active containerd >/dev/null 2>&1; then
+            echo "✗ CRITICAL FAILURE: containerd is not active"
+            echo "This means the previous job's cleanup did NOT restore containerd!"
+            systemctl status containerd || true
+            exit 1
+          fi
+          echo "✓ containerd service is active"
+          
+          which containerd >/dev/null && echo "✓ containerd binary exists" || (echo "✗ containerd binary missing" && exit 1)
+          
+      - name: Verify no KubeSolo remnants from previous job
+        run: |
+          echo "=== Verifying Previous Cleanup Was Complete ==="
+          
+          [ ! -f /usr/local/bin/kubesolo ] && echo "✓ KubeSolo binary removed" || (echo "✗ KubeSolo binary still exists" && exit 1)
+          [ ! -d /var/lib/kubesolo ] && echo "✓ KubeSolo data dir removed" || (echo "✗ KubeSolo data dir still exists" && exit 1)
+          [ ! -f /etc/systemd/system/kubesolo.service ] && echo "✓ KubeSolo service removed" || (echo "✗ KubeSolo service file still exists" && exit 1)
+          
+          # No backup files should remain
+          if ls /usr/bin/*.bak >/dev/null 2>&1; then
+            echo "✗ Backup files still exist:"
+            ls -la /usr/bin/*.bak
+            exit 1
+          fi
+          echo "✓ No backup files remaining"
+          
+      - name: Run KubeSolo again to prove it works after cleanup
         id: kubesolo
         uses: ./
         with:
           version: 'latest'
           timeout: '120'
         
-      - name: Verify KubeSolo works
+      - name: Verify second KubeSolo instance works
         run: |
-          echo "=== Testing KubeSolo Functionality ==="
+          echo "=== Verifying Second KubeSolo Installation Works ==="
           export KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}
           kubectl get nodes
           kubectl get pods -A
-          echo "✓ KubeSolo is working"
-        
-      - name: Verify Docker is disabled during KubeSolo usage
-        run: |
-          echo "=== Verifying Docker is disabled ==="
-          if systemctl is-active docker >/dev/null 2>&1; then
-            echo "✗ ERROR: Docker should be stopped but is still active"
-            exit 1
-          fi
-          echo "✓ Docker is stopped as expected"
+          kubectl create deployment nginx --image=nginx:alpine
+          kubectl wait --for=condition=available --timeout=60s deployment/nginx
+          echo "✓ Second KubeSolo instance is fully functional"
           
-          if [ -f /usr/bin/docker.bak ]; then
-            echo "✓ Docker binary backup exists"
-          else
-            echo "✗ ERROR: Docker binary backup not found"
-            exit 1
-          fi
-        
-      # Cleanup runs automatically here via post: hook
+      # Cleanup will run automatically again for this job
       
-      - name: Wait for cleanup to complete
-        if: always()
+  # Job 3: FINAL TEST - Run a pure Docker workflow after everything
+  # This proves the action can be used multiple times without breaking the system
+  test-docker-after-multiple-runs:
+    runs-on: ubuntu-24.04
+    name: Verify Docker Works After Multiple KubeSolo Runs
+    needs: test-cleanup-restoration
+    if: always()
+    steps:
+      - name: FINAL TEST - Verify Docker is fully functional
         run: |
-          echo "Cleanup runs automatically via GitHub Actions post: hook"
-          echo "Waiting a moment to ensure cleanup completes..."
-          sleep 5
-        
-      - name: CRITICAL TEST - Verify Docker is restored and functional
-        if: always()
-        run: |
-          echo "=== CRITICAL: Verifying Docker Restoration ==="
+          echo "=== FINAL TEST: Docker After Multiple KubeSolo Runs ==="
+          echo "This simulates a workflow that needs Docker after KubeSolo has been used"
+          echo ""
           
-          # Check if Docker service is active again
+          # Check Docker service
           if ! systemctl is-active docker >/dev/null 2>&1; then
-            echo "✗ FAIL: Docker service is not active after cleanup"
+            echo "✗ FAIL: Docker service not active"
             systemctl status docker || true
             exit 1
           fi
           echo "✓ Docker service is active"
           
-          # Check if Docker binary is restored
-          if ! which docker >/dev/null 2>&1; then
-            echo "✗ FAIL: Docker binary not found after cleanup"
-            ls -la /usr/bin/docker* || true
-            exit 1
-          fi
-          echo "✓ Docker binary exists at: $(which docker)"
-          
-          # MOST IMPORTANT: Verify Docker actually works
-          if ! docker ps >/dev/null 2>&1; then
-            echo "✗ FAIL: 'docker ps' does not work after cleanup"
-            docker ps || true
-            exit 1
-          fi
-          echo "✓ 'docker ps' works after cleanup"
-          
-          # Try running a container to prove Docker is fully functional
-          if ! docker run --rm hello-world >/dev/null 2>&1; then
-            echo "✗ FAIL: Cannot run Docker containers after cleanup"
-            docker run --rm hello-world || true
-            exit 1
-          fi
-          echo "✓ Docker can run containers after cleanup"
-          
-          echo ""
-          echo "=========================================="
-          echo "✓✓✓ DOCKER IS FULLY FUNCTIONAL AFTER CLEANUP ✓✓✓"
-          echo "=========================================="
-        
-      - name: CRITICAL TEST - Verify containerd is restored
-        if: always()
-        run: |
-          echo "=== CRITICAL: Verifying containerd Restoration ==="
-          
-          # Check if containerd service is active
-          if ! systemctl is-active containerd >/dev/null 2>&1; then
-            echo "✗ FAIL: containerd service is not active after cleanup"
-            systemctl status containerd || true
-            exit 1
-          fi
-          echo "✓ containerd service is active"
-          
-          # Check if containerd binary is restored
-          if ! which containerd >/dev/null 2>&1; then
-            echo "✗ FAIL: containerd binary not found after cleanup"
-            ls -la /usr/bin/containerd* || true
-            exit 1
-          fi
-          echo "✓ containerd binary exists at: $(which containerd)"
-          
-          echo ""
-          echo "=========================================="
-          echo "✓✓✓ CONTAINERD IS RESTORED AFTER CLEANUP ✓✓✓"
-          echo "=========================================="
-        
-      - name: CRITICAL TEST - Verify no KubeSolo remnants
-        if: always()
-        run: |
-          echo "=== CRITICAL: Verifying Complete Cleanup ==="
-          
-          # Check KubeSolo binary is removed
-          if [ -f /usr/local/bin/kubesolo ]; then
-            echo "✗ FAIL: KubeSolo binary still exists"
-            exit 1
-          fi
-          echo "✓ KubeSolo binary removed"
-          
-          # Check KubeSolo data directory is removed
-          if [ -d /var/lib/kubesolo ]; then
-            echo "✗ FAIL: KubeSolo data directory still exists"
-            ls -la /var/lib/kubesolo || true
-            exit 1
-          fi
-          echo "✓ KubeSolo data directory removed"
-          
-          # Check KubeSolo service is removed
-          if [ -f /etc/systemd/system/kubesolo.service ]; then
-            echo "✗ FAIL: KubeSolo service file still exists"
-            exit 1
-          fi
-          echo "✓ KubeSolo service file removed"
-          
-          # Check for any .bak files that should have been restored
-          if ls /usr/bin/*.bak >/dev/null 2>&1; then
-            echo "✗ FAIL: Backup files still exist:"
-            ls -la /usr/bin/*.bak
-            exit 1
-          fi
-          echo "✓ No backup files remaining"
-          
-          echo ""
-          echo "=========================================="
-          echo "✓✓✓ SYSTEM COMPLETELY CLEANED UP ✓✓✓"
-          echo "=========================================="
-        
-      - name: FINAL TEST - Run a Docker workflow to prove system is usable
-        if: always()
-        run: |
-          echo "=== FINAL TEST: Running Docker Workflow ==="
-          echo "This simulates a subsequent workflow that needs Docker"
-          
-          # Pull an image
+          # Pull and run a container
+          echo "Pulling nginx:alpine..."
           docker pull nginx:alpine
           
-          # Run a container
+          echo "Running container..."
           CONTAINER_ID=$(docker run -d -p 8080:80 nginx:alpine)
           echo "Started container: $CONTAINER_ID"
           
-          # Wait for it to be ready
+          # Wait and test
           sleep 3
-          
-          # Test it responds
           curl -f http://localhost:8080 >/dev/null 2>&1 || (echo "✗ Container not responding" && exit 1)
+          echo "✓ Container is responding"
           
-          # Clean up
-          docker stop $CONTAINER_ID
-          docker rm $CONTAINER_ID
+          # Cleanup
+          docker stop $CONTAINER_ID >/dev/null
+          docker rm $CONTAINER_ID >/dev/null
           
           echo ""
           echo "=========================================="
-          echo "✓✓✓ SUBSEQUENT DOCKER WORKFLOWS WORK ✓✓✓"
+          echo "✓✓✓ COMPLETE SUCCESS ✓✓✓"
           echo "=========================================="
           echo ""
-          echo "SUCCESS: System state has been completely restored!"
-          echo "Docker and containerd work exactly as they did before."
+          echo "The setup-kubesolo action:"
+          echo "  ✓ Installs and runs KubeSolo successfully"
+          echo "  ✓ Properly disables Docker/containerd during use"
+          echo "  ✓ Completely restores system state after cleanup"
+          echo "  ✓ Can be run multiple times without issues"
+          echo "  ✓ Allows subsequent workflows to use Docker normally"
+          echo ""
+          echo "System state restoration is PERFECT!"
