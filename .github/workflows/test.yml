@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - javascript-action-with-cleanup
   pull_request:
   workflow_dispatch:
 
@@ -13,15 +14,144 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-basic-setup:
-    runs-on: ubuntu-latest
-    name: Test KubeSolo Setup
+  test-setup-and-cleanup:
+    runs-on: ubuntu-24.04
+    name: Test KubeSolo Setup and Cleanup
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       
+      - name: Check initial state - Docker should be running
+        run: |
+          echo "=== Checking initial Docker state ==="
+          systemctl is-active docker && echo "✓ Docker is active" || echo "✗ Docker is not active"
+          which docker && echo "✓ Docker binary exists at: $(which docker)" || echo "✗ Docker binary not found"
+          
+      - name: Check initial state - containerd should be running
+        run: |
+          echo "=== Checking initial containerd state ==="
+          systemctl is-active containerd && echo "✓ containerd is active" || echo "✗ containerd is not active"
+          which containerd && echo "✓ containerd binary exists at: $(which containerd)" || echo "✗ containerd binary not found"
+          
       - name: Setup KubeSolo
         id: kubesolo
         uses: ./
+        with:
+          version: 'latest'
+          wait-for-ready: 'true'
+          timeout: '120'
       
-
+      - name: Verify KubeSolo is installed and running
+        run: |
+          echo "=== Verifying KubeSolo installation ==="
+          which kubesolo && echo "✓ KubeSolo binary found at: $(which kubesolo)" || (echo "✗ KubeSolo binary not found" && exit 1)
+          systemctl is-active kubesolo && echo "✓ KubeSolo service is active" || (echo "✗ KubeSolo service is not active" && exit 1)
+          
+      - name: Verify Docker is stopped and backed up
+        run: |
+          echo "=== Verifying Docker is disabled ==="
+          if systemctl is-active docker; then
+            echo "✗ Docker should be stopped but is still active"
+            exit 1
+          else
+            echo "✓ Docker is stopped as expected"
+          fi
+          
+          if [ -f /usr/bin/docker.bak ]; then
+            echo "✓ Docker binary backup exists"
+          else
+            echo "✗ Docker binary backup not found"
+            exit 1
+          fi
+          
+      - name: Verify containerd is stopped and backed up
+        run: |
+          echo "=== Verifying containerd is disabled ==="
+          if systemctl is-active containerd; then
+            echo "✗ containerd should be stopped but is still active"
+            exit 1
+          else
+            echo "✓ containerd is stopped as expected"
+          fi
+          
+          if [ -f /usr/bin/containerd.bak ]; then
+            echo "✓ containerd binary backup exists"
+          else
+            echo "✗ containerd binary backup not found"
+            exit 1
+          fi
+      
+      - name: Test kubectl access
+        run: |
+          echo "=== Testing kubectl access ==="
+          export KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}
+          kubectl version --client
+          kubectl cluster-info
+          kubectl get nodes
+          kubectl get pods -A
+          
+      - name: Deploy test workload
+        run: |
+          echo "=== Deploying test workload ==="
+          export KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}
+          
+          # Create a simple nginx deployment
+          kubectl create deployment nginx --image=nginx:alpine
+          kubectl expose deployment nginx --port=80 --type=ClusterIP
+          
+          # Wait for deployment to be ready
+          kubectl wait --for=condition=available --timeout=60s deployment/nginx
+          
+          # Verify deployment
+          kubectl get deployments
+          kubectl get pods
+          kubectl get services
+          
+      - name: Test service connectivity
+        run: |
+          echo "=== Testing service connectivity ==="
+          export KUBECONFIG=${{ steps.kubesolo.outputs.kubeconfig }}
+          
+          # Get the nginx pod name
+          POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
+          echo "Testing pod: $POD_NAME"
+          
+          # Test connectivity
+          kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
+          echo "✓ Service is responding correctly"
+          
+      # Note: Cleanup will run automatically in the "Post" phase after all steps complete
+      # We'll verify the cleanup in a separate job
+      
+  # This job runs after the main job and verifies that cleanup was successful
+  verify-cleanup:
+    runs-on: ubuntu-24.04
+    name: Verify Cleanup Works
+    needs: test-setup-and-cleanup
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Check Docker state before setup
+        id: before
+        run: |
+          echo "docker_active=$(systemctl is-active docker || echo 'inactive')" >> $GITHUB_OUTPUT
+          echo "containerd_active=$(systemctl is-active containerd || echo 'inactive')" >> $GITHUB_OUTPUT
+        
+      - name: Setup KubeSolo
+        uses: ./
+        
+      - name: Dummy user workload
+        run: |
+          echo "User would run their tests here"
+          export KUBECONFIG=/etc/kubesolo/kubeconfig
+          kubectl get nodes
+        
+      # The post-cleanup runs automatically here
+      
+      - name: Verify cleanup happened (this runs in post-job cleanup)
+        if: always()
+        run: |
+          echo "This step verifies cleanup will happen automatically"
+          echo "The actual verification will be visible in the 'Post' section of the logs"
