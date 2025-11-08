@@ -25,94 +25,9 @@ inputs:
 outputs:
   kubeconfig:
     description: 'Path to the kubeconfig file'
-    value: ${{ steps.install.outputs.kubeconfig }}
 
 runs:
-  using: 'composite'
-  steps:
-    - name: Disable conflicting container runtimes
-      shell: bash
-      run: |
-        echo "Disabling conflicting container runtimes..."
-        
-        # Stop and mask all container runtime services
-        sudo systemctl stop docker.socket docker containerd podman 2>/dev/null || true
-        sudo systemctl mask docker.socket docker containerd podman 2>/dev/null || true
-        
-        # Backup runtime binaries to hide them from detection
-        for binary in docker dockerd containerd containerd-shim containerd-shim-runc-v2 runc podman; do
-          if [ -f "/usr/bin/${binary}" ]; then
-            sudo mv "/usr/bin/${binary}" "/usr/bin/${binary}.bak" 2>/dev/null || true
-          fi
-        done
-        
-        # Clean up runtime sockets
-        sudo rm -rf /var/run/docker* /var/run/containerd /run/containerd /run/docker* 2>/dev/null || true
-        
-        echo "✓ Container runtime disabled"
-    
-    - name: Install KubeSolo
-      id: install
-      shell: bash
-      env:
-        KUBESOLO_VERSION: ${{ inputs.version }}
-        LOCAL_STORAGE: true
-      run: |
-        # Use default version if not set
-        KUBESOLO_VERSION="${KUBESOLO_VERSION:-latest}"
-        echo "Installing KubeSolo ${KUBESOLO_VERSION}..."
-        
-        # Install KubeSolo
-        if [ "${KUBESOLO_VERSION}" = "latest" ]; then
-          # Don't pass version for latest, let installer determine it
-          curl -sfL https://get.kubesolo.io | sudo sh -
-        else
-          curl -sfL https://get.kubesolo.io | INSTALL_KUBESOLO_VERSION="${KUBESOLO_VERSION}" sudo sh -
-        fi
-        
-        # Set kubeconfig path output
-        KUBECONFIG_PATH="/var/lib/kubesolo/pki/admin/admin.kubeconfig"
-        echo "kubeconfig=${KUBECONFIG_PATH}" >> $GITHUB_OUTPUT
-        
-        # Make kubeconfig accessible
-        sudo chmod 644 "${KUBECONFIG_PATH}"
-        
-        echo "✓ KubeSolo installed successfully"
-    
-    - name: Wait for cluster ready
-      if: inputs.wait-for-ready == 'true'
-      shell: bash
-      env:
-        TIMEOUT: ${{ inputs.timeout }}
-      run: |
-        # Use default timeout if not set
-        TIMEOUT_SECONDS="${TIMEOUT:-60}"
-        echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT_SECONDS}s)..."
-        
-        start_time=$(date +%s)
-        while true; do
-          current_time=$(date +%s)
-          elapsed=$((current_time - start_time))
-          
-          if [ $elapsed -gt ${TIMEOUT_SECONDS} ]; then
-            echo "ERROR: Timeout waiting for cluster to be ready"
-            exit 1
-          fi
-          
-          # Check if KubeSolo service is active
-          if sudo systemctl is-active --quiet kubesolo; then
-            echo "  KubeSolo service is active"
-            
-            # Check if API server port is listening
-            if ss -tlnp 2>/dev/null | grep -q ':6443 '; then
-              echo "  API server is listening on port 6443"
-              break
-            fi
-          fi
-          
-          echo "  Cluster not ready yet, waiting... (${elapsed}/${TIMEOUT_SECONDS}s)"
-          sleep 5
-        done
-        
-        echo "✓ KubeSolo cluster is ready!"
+  using: 'node20'
+  main: 'dist/index.js'
+  post: 'dist/index.js'
 
