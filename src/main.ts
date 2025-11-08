@@ -170,31 +170,6 @@ WantedBy=multi-user.target
     // Clean up
     await exec.exec('rm', ['-f', '/tmp/kubesolo.tar.gz']);
     
-    // Wait a moment for kubeconfig to be created
-    core.info('  Waiting for kubeconfig to be created...');
-    let kubeconfigExists = false;
-    const kubeconfigPath = '/var/lib/kubesolo/pki/admin/admin.kubeconfig';
-    
-    for (let i = 0; i < 30; i++) {
-      try {
-        await fs.access(kubeconfigPath);
-        kubeconfigExists = true;
-        break;
-      } catch {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    if (kubeconfigExists) {
-      // Make kubeconfig accessible
-      await exec.exec('sudo', ['chmod', '644', kubeconfigPath]);
-      core.setOutput('kubeconfig', kubeconfigPath);
-      core.info(`  Kubeconfig ready at: ${kubeconfigPath}`);
-    } else {
-      core.warning('Kubeconfig not found yet, it may be created during cluster startup');
-      core.setOutput('kubeconfig', kubeconfigPath);
-    }
-    
     core.info('✓ KubeSolo installed successfully');
   } catch (error) {
     throw new Error(`Failed to install KubeSolo: ${error}`);
@@ -210,11 +185,14 @@ async function waitForClusterReady(timeoutSeconds: number): Promise<void> {
     core.info(`Waiting for KubeSolo cluster to be ready (timeout: ${timeoutSeconds}s)...`);
     
     const startTime = Date.now();
+    const kubeconfigPath = '/var/lib/kubesolo/pki/admin/admin.kubeconfig';
     
     while (true) {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       
       if (elapsed > timeoutSeconds) {
+        core.error('Timeout waiting for cluster to be ready');
+        await showDiagnostics();
         throw new Error('Timeout waiting for cluster to be ready');
       }
       
@@ -235,7 +213,53 @@ async function waitForClusterReady(timeoutSeconds: number): Promise<void> {
         
         if (portResult === 0) {
           core.info('  API server is listening on port 6443');
-          break;
+          
+          // Check if kubeconfig exists and is accessible
+          try {
+            await fs.access(kubeconfigPath);
+            core.info('  Kubeconfig file exists');
+            
+            // Make kubeconfig accessible
+            await exec.exec('sudo', ['chmod', '644', kubeconfigPath], { 
+              ignoreReturnCode: true,
+              silent: true 
+            });
+            
+            // Verify kubectl can connect to API server
+            const kubectlResult = await exec.exec('kubectl', ['--kubeconfig', kubeconfigPath, 'get', 'nodes', '--no-headers'], {
+              ignoreReturnCode: true,
+              silent: true
+            });
+            
+            if (kubectlResult === 0) {
+              core.info('  kubectl can connect to API server');
+              
+              // Verify node is Ready
+              const nodeReady = await exec.exec('bash', ['-c', 
+                `kubectl --kubeconfig ${kubeconfigPath} get nodes --no-headers | grep -q " Ready "`
+              ], {
+                ignoreReturnCode: true,
+                silent: true
+              });
+              
+              if (nodeReady === 0) {
+                core.info('  Node is Ready');
+                
+                // Set output and export environment variable
+                core.setOutput('kubeconfig', kubeconfigPath);
+                core.exportVariable('KUBECONFIG', kubeconfigPath);
+                core.info(`  KUBECONFIG exported: ${kubeconfigPath}`);
+                
+                break;
+              } else {
+                core.info('  Node not Ready yet');
+              }
+            } else {
+              core.info('  kubectl cannot connect yet');
+            }
+          } catch {
+            core.info('  Kubeconfig not accessible yet');
+          }
         }
       }
       
@@ -243,9 +267,34 @@ async function waitForClusterReady(timeoutSeconds: number): Promise<void> {
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
     
-    core.info('✓ KubeSolo cluster is ready!');
+    core.info('✓ KubeSolo cluster is fully ready!');
   } catch (error) {
     throw new Error(`Failed waiting for cluster: ${error}`);
+  } finally {
+    core.endGroup();
+  }
+}
+
+async function showDiagnostics(): Promise<void> {
+  core.startGroup('Diagnostic Information');
+  
+  try {
+    core.info('=== KubeSolo Service Status ===');
+    await exec.exec('sudo', ['systemctl', 'status', 'kubesolo'], { ignoreReturnCode: true });
+    
+    core.info('=== KubeSolo Logs (last 100 lines) ===');
+    await exec.exec('sudo', ['journalctl', '-u', 'kubesolo', '-n', '100', '--no-pager'], { ignoreReturnCode: true });
+    
+    core.info('=== Kubeconfig Directory ===');
+    await exec.exec('ls', ['-laR', '/var/lib/kubesolo/pki/'], { ignoreReturnCode: true });
+    
+    core.info('=== Listening Ports ===');
+    await exec.exec('sudo', ['ss', '-tlnp'], { ignoreReturnCode: true });
+    
+    core.info('=== Network Interfaces ===');
+    await exec.exec('ip', ['addr'], { ignoreReturnCode: true });
+  } catch (error) {
+    core.warning(`Failed to gather diagnostics: ${error}`);
   } finally {
     core.endGroup();
   }
