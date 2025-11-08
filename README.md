@@ -8,6 +8,7 @@ A GitHub Action for installing and configuring [KubeSolo](https://github.com/por
 - ✅ Fast disabling of conflicting container runtimes (Docker, Podman, containerd)
 - ✅ Waits for cluster readiness (checks systemd service and API server port)
 - ✅ Outputs kubeconfig path for easy integration
+- ✅ **Automatic cleanup and system restoration** - Runs post-cleanup after your workflow completes
 
 ## Quick Start
 
@@ -24,7 +25,7 @@ jobs:
       
       - name: Setup KubeSolo
         id: kubesolo
-        uses: fenio/setup-kubesolo@v2
+        uses: fenio/setup-kubesolo@v3
       
       - name: Deploy and test
         env:
@@ -32,6 +33,8 @@ jobs:
         run: |
           kubectl apply -f k8s/
           kubectl wait --for=condition=available --timeout=60s deployment/my-app
+      
+      # Cleanup happens automatically after this job completes!
 ```
 
 ## Inputs
@@ -48,12 +51,27 @@ jobs:
 |--------|-------------|
 | `kubeconfig` | Path to the kubeconfig file (`/var/lib/kubesolo/pki/admin/admin.kubeconfig`) |
 
+## How It Works
+
+### Setup Phase
+1. Temporarily disables conflicting container runtimes (Docker, containerd, podman)
+2. Backs up runtime binaries by renaming them to `.bak`
+3. Installs KubeSolo
+4. Waits for the cluster to become ready
+
+### Automatic Cleanup (Post-run)
+After your workflow steps complete (whether successful or failed), the action automatically:
+1. Stops and removes KubeSolo
+2. Restores all backed-up container runtime binaries
+3. Unmasks and restarts container runtime services
+4. Leaves your system in its original state
+
+This is achieved using GitHub Actions' `post:` hook, similar to how `actions/checkout` cleans up after itself.
+
 ## Requirements
 
 - Runs on `ubuntu-latest` (or any Linux-based runner)
 - Requires `sudo` access (provided by default in GitHub Actions)
-
-**Note:** The action masks and disables Docker and other container runtimes that conflict with KubeSolo by stopping services and renaming binaries. This is much faster than package removal and works perfectly on ephemeral GitHub Actions runners.
 
 ## Troubleshooting
 
@@ -61,10 +79,23 @@ If the cluster doesn't become ready in time, increase the timeout:
 
 ```yaml
 - name: Setup KubeSolo
-  uses: fenio/setup-kubesolo@v2
+  uses: fenio/setup-kubesolo@v3
   with:
     timeout: '600'  # 10 minutes
 ```
+
+## Development
+
+This action is written in TypeScript and compiled to JavaScript using `@vercel/ncc`.
+
+### Building
+
+```bash
+npm install
+npm run build
+```
+
+The compiled output in `dist/` must be committed to the repository for the action to work.
 
 ## License
 
