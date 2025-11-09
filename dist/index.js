@@ -25726,11 +25726,16 @@ async function stopKubeSolo() {
         await exec.exec('sudo', ['systemctl', 'disable', 'kubesolo'], { ignoreReturnCode: true });
         core.info('  Disabled KubeSolo service');
     }
-    // Remove KubeSolo files one by one for better error visibility
+    // Remove KubeSolo files and directories one by one for better error visibility
     const filesToRemove = [
         '/var/lib/kubesolo',
         '/usr/local/bin/kubesolo',
-        '/etc/systemd/system/kubesolo.service'
+        '/etc/systemd/system/kubesolo.service',
+        '/opt/cni',
+        '/var/lib/cni',
+        '/etc/cni',
+        '/var/log/pods',
+        '/var/log/containers'
     ];
     for (const file of filesToRemove) {
         const result = await exec.exec('sudo', ['rm', '-rf', file], { ignoreReturnCode: true, silent: true });

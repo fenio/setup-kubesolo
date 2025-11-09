@@ -16,12 +16,14 @@ Every operation in the setup phase has a corresponding cleanup operation:
 
 | Setup Operation | Cleanup Operation | Location |
 |----------------|-------------------|----------|
-| Stop & mask container runtime services | Unmask & restart services | `src/cleanup.ts:86-102` |
-| Rename binaries to `.bak` | Restore from `.bak` to original | `src/cleanup.ts:64-77` |
-| Remove runtime sockets | Recreated automatically by service restart | `src/cleanup.ts:100` |
-| Install KubeSolo binary (`/usr/local/bin/kubesolo`) | Remove KubeSolo binary | `src/cleanup.ts:55` |
-| Create systemd service (`/etc/systemd/system/kubesolo.service`) | Stop, disable, remove service & reload daemon | `src/cleanup.ts:39-56` |
-| Create KubeSolo data directory (`/var/lib/kubesolo`) | Remove entire directory and contents | `src/cleanup.ts:55` |
+| Stop & mask container runtime services | Unmask & restart services | `src/cleanup.ts:92-142` |
+| Rename binaries to `.bak` | Restore from `.bak` to original | `src/cleanup.ts:73-90` |
+| Remove runtime sockets | Recreated automatically by service restart | N/A |
+| Install KubeSolo binary (`/usr/local/bin/kubesolo`) | Remove KubeSolo binary | `src/cleanup.ts:57` |
+| Create systemd service (`/etc/systemd/system/kubesolo.service`) | Stop, disable, remove service & reload daemon | `src/cleanup.ts:39-68` |
+| Create KubeSolo data directory (`/var/lib/kubesolo`) | Remove entire directory and contents | `src/cleanup.ts:56` |
+| KubeSolo creates CNI directories (`/opt/cni`, `/var/lib/cni`, `/etc/cni`) | Remove all CNI directories | `src/cleanup.ts:59-61` |
+| KubeSolo creates log directories (`/var/log/pods`, `/var/log/containers`) | Remove log directories | `src/cleanup.ts:62-63` |
 | Set KUBECONFIG environment variable | No cleanup needed - job-scoped only | N/A |
 
 ### Cleanup Guarantees
