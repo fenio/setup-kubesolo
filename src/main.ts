@@ -88,6 +88,11 @@ async function installKubeSolo(version: string): Promise<void> {
       });
       actualVersion = versionOutput.join('').trim();
       core.info(`  Latest version: ${actualVersion}`);
+      
+      // Validate that we got a version
+      if (!actualVersion || actualVersion.length === 0) {
+        throw new Error('Failed to resolve latest version from GitHub API. The API may be rate-limited or unavailable.');
+      }
     }
     
     // Detect architecture

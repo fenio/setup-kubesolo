@@ -25985,6 +25985,10 @@ async function installKubeSolo(version) {
             });
             actualVersion = versionOutput.join('').trim();
             core.info(`  Latest version: ${actualVersion}`);
+            // Validate that we got a version
+            if (!actualVersion || actualVersion.length === 0) {
+                throw new Error('Failed to resolve latest version from GitHub API. The API may be rate-limited or unavailable.');
+            }
         }
         // Detect architecture
         const archOutput = [];
@@ -26054,6 +26058,20 @@ WantedBy=multi-user.target
         await exec.exec('sudo', ['systemctl', 'start', 'kubesolo']);
         // Clean up
         await exec.exec('rm', ['-f', '/tmp/kubesolo.tar.gz']);
+        // Wait a moment for kubeconfig to be generated
+        core.info('  Waiting for kubeconfig generation...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Export KUBECONFIG path for subsequent steps
+        const kubeconfigPath = '/var/lib/kubesolo/pki/admin/admin.kubeconfig';
+        // Make kubeconfig accessible
+        await exec.exec('sudo', ['chmod', '644', kubeconfigPath], {
+            ignoreReturnCode: true,
+            silent: true
+        });
+        // Set output and export environment variable
+        core.setOutput('kubeconfig', kubeconfigPath);
+        core.exportVariable('KUBECONFIG', kubeconfigPath);
+        core.info(`  KUBECONFIG exported: ${kubeconfigPath}`);
         core.info('✓ KubeSolo installed successfully');
     }
     catch (error) {
@@ -26115,10 +26133,10 @@ async function waitForClusterReady(timeoutSeconds) {
                             });
                             if (nodeReady === 0) {
                                 core.info('  Node is Ready');
-                                // Set output and export environment variable
+                                // Re-export KUBECONFIG to ensure it's set (already exported in installKubeSolo)
                                 core.setOutput('kubeconfig', kubeconfigPath);
                                 core.exportVariable('KUBECONFIG', kubeconfigPath);
-                                core.info(`  KUBECONFIG exported: ${kubeconfigPath}`);
+                                core.info(`  KUBECONFIG confirmed: ${kubeconfigPath}`);
                                 break;
                             }
                             else {
