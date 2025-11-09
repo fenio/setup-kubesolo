@@ -26108,15 +26108,27 @@ async function waitForClusterReady(timeoutSeconds) {
                 });
                 if (portResult === 0) {
                     core.info('  API server is listening on port 6443');
-                    // Check if kubeconfig exists and is accessible
-                    try {
-                        await fs_1.promises.access(kubeconfigPath);
+                    // Check if kubeconfig exists (check with sudo to avoid permission issues)
+                    const kubeconfigExists = await exec.exec('sudo', ['test', '-f', kubeconfigPath], {
+                        ignoreReturnCode: true,
+                        silent: true
+                    });
+                    if (kubeconfigExists === 0) {
                         core.info('  Kubeconfig file exists');
-                        // Make kubeconfig accessible
+                        // Make kubeconfig accessible BEFORE trying to read it
                         await exec.exec('sudo', ['chmod', '644', kubeconfigPath], {
                             ignoreReturnCode: true,
                             silent: true
                         });
+                        try {
+                            // Verify we can now access it
+                            await fs_1.promises.access(kubeconfigPath);
+                            core.info('  Kubeconfig is accessible');
+                        }
+                        catch {
+                            core.info('  Kubeconfig exists but still not accessible after chmod');
+                            continue;
+                        }
                         // Verify kubectl can connect to API server
                         const kubectlResult = await exec.exec('kubectl', ['--kubeconfig', kubeconfigPath, 'get', 'nodes', '--no-headers'], {
                             ignoreReturnCode: true,
@@ -26146,9 +26158,6 @@ async function waitForClusterReady(timeoutSeconds) {
                         else {
                             core.info('  kubectl cannot connect yet');
                         }
-                    }
-                    catch {
-                        core.info('  Kubeconfig not accessible yet');
                     }
                 }
             }
