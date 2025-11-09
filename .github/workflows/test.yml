@@ -11,7 +11,7 @@ on:
 jobs:
   # Job 1: Basic functionality test - setup, use KubeSolo, cleanup runs automatically
   test-kubesolo-functionality:
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     name: Test KubeSolo Functionality
     steps:
       - name: Checkout
@@ -89,7 +89,7 @@ jobs:
   # This simulates a realistic scenario: a subsequent workflow that also needs KubeSolo
   # If cleanup didn't work, this job would fail because Docker/containerd would still be masked
   test-cleanup-restoration:
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     name: Verify Cleanup Restores System State
     needs: test-kubesolo-functionality
     if: always()
@@ -186,7 +186,7 @@ jobs:
   # Job 3: FINAL TEST - Run a pure Docker workflow after everything
   # This proves the action can be used multiple times without breaking the system
   test-docker-after-multiple-runs:
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     name: Verify Docker Works After Multiple KubeSolo Runs
     needs: test-cleanup-restoration
     if: always()
