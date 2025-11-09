@@ -8,11 +8,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Cancel in-progress runs for the same workflow on the same branch
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   # Job 1: Basic functionality test - setup, use KubeSolo, cleanup runs automatically
   test-kubesolo-functionality:
