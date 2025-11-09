@@ -170,6 +170,24 @@ WantedBy=multi-user.target
     // Clean up
     await exec.exec('rm', ['-f', '/tmp/kubesolo.tar.gz']);
     
+    // Wait a moment for kubeconfig to be generated
+    core.info('  Waiting for kubeconfig generation...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
+    // Export KUBECONFIG path for subsequent steps
+    const kubeconfigPath = '/var/lib/kubesolo/pki/admin/admin.kubeconfig';
+    
+    // Make kubeconfig accessible
+    await exec.exec('sudo', ['chmod', '644', kubeconfigPath], { 
+      ignoreReturnCode: true,
+      silent: true 
+    });
+    
+    // Set output and export environment variable
+    core.setOutput('kubeconfig', kubeconfigPath);
+    core.exportVariable('KUBECONFIG', kubeconfigPath);
+    core.info(`  KUBECONFIG exported: ${kubeconfigPath}`);
+    
     core.info('✓ KubeSolo installed successfully');
   } catch (error) {
     throw new Error(`Failed to install KubeSolo: ${error}`);
@@ -245,10 +263,10 @@ async function waitForClusterReady(timeoutSeconds: number): Promise<void> {
               if (nodeReady === 0) {
                 core.info('  Node is Ready');
                 
-                // Set output and export environment variable
+                // Re-export KUBECONFIG to ensure it's set (already exported in installKubeSolo)
                 core.setOutput('kubeconfig', kubeconfigPath);
                 core.exportVariable('KUBECONFIG', kubeconfigPath);
-                core.info(`  KUBECONFIG exported: ${kubeconfigPath}`);
+                core.info(`  KUBECONFIG confirmed: ${kubeconfigPath}`);
                 
                 break;
               } else {
