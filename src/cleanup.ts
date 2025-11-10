@@ -58,9 +58,37 @@ async function stopKubeSolo(): Promise<void> {
     silent: true 
   });
   
-  // Give a moment for processes to fully terminate and release file handles
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  core.info('  All KubeSolo processes terminated');
+  // Give a moment for processes to fully terminate
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
+  // Unmount all KubeSolo-related mount points (critical for cleanup)
+  core.info('  Unmounting KubeSolo filesystems...');
+  
+  // Find and unmount all mounts under /var/lib/kubesolo (in reverse order, deepest first)
+  const mounts: string[] = [];
+  await exec.exec('bash', ['-c', 'mount | grep /var/lib/kubesolo | awk \'{print $3}\' | sort -r || true'], {
+    ignoreReturnCode: true,
+    silent: true,
+    listeners: {
+      stdout: (data: Buffer) => {
+        const lines = data.toString().trim().split('\n').filter(line => line);
+        mounts.push(...lines);
+      }
+    }
+  });
+  
+  if (mounts.length > 0) {
+    core.info(`  Found ${mounts.length} mount points to unmount`);
+    for (const mount of mounts) {
+      await exec.exec('sudo', ['umount', '-f', mount], { 
+        ignoreReturnCode: true, 
+        silent: true 
+      });
+    }
+    core.info('  All mount points unmounted');
+  }
+  
+  core.info('  All KubeSolo processes terminated and mounts cleaned');
   
   // Remove KubeSolo files and directories one by one for better error visibility
   const filesToRemove = [
