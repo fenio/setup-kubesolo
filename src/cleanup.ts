@@ -67,6 +67,8 @@ async function stopKubeSolo(): Promise<void> {
     const result = await exec.exec('sudo', ['rm', '-rf', file], { ignoreReturnCode: true, silent: true });
     if (result === 0) {
       core.info(`  Removed ${file}`);
+    } else {
+      core.warning(`  Failed to remove ${file} (this may be expected if it doesn't exist)`);
     }
   }
   
