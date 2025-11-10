@@ -252,6 +252,19 @@ jobs:
           fi
           echo "✓ No backup files remaining"
           
+          # CRITICAL: Verify port 6443 is NOT in use
+          # This is essential for other k8s distributions to work after KubeSolo
+          echo ""
+          echo "=== CRITICAL: Verifying Port 6443 Is Available ==="
+          if ss -tlnp 2>/dev/null | grep -q ":6443 "; then
+            echo "✗ CRITICAL FAILURE: Port 6443 is still in use!"
+            echo "This will prevent other k8s distributions from starting."
+            echo "Processes using port 6443:"
+            ss -tlnp 2>/dev/null | grep ":6443"
+            exit 1
+          fi
+          echo "✓ Port 6443 is free and available for other k8s distributions"
+          
       - name: Run KubeSolo again to prove it works after cleanup
         id: kubesolo
         uses: ./

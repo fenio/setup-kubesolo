@@ -58,7 +58,39 @@ async function stopKubeSolo(): Promise<void> {
     silent: true 
   });
   
-  // Give a moment for processes to fully terminate
+  // Wait for port 6443 to be released - CRITICAL for subsequent k8s distributions
+  core.info('  Waiting for port 6443 to be released...');
+  const portReleaseTimeout = 30; // seconds
+  const portReleaseStart = Date.now();
+  let portReleased = false;
+  
+  while (Date.now() - portReleaseStart < portReleaseTimeout * 1000) {
+    const portCheck = await exec.exec('bash', ['-c', 'ss -tlnp 2>/dev/null | grep -q ":6443 "'], {
+      ignoreReturnCode: true,
+      silent: true
+    });
+    
+    if (portCheck !== 0) {
+      // Port is no longer in use
+      portReleased = true;
+      core.info('  Port 6443 is now free');
+      break;
+    }
+    
+    // Port still in use, wait a bit
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+  
+  if (!portReleased) {
+    core.warning('  Port 6443 may still be in use after 30s - this could cause issues for subsequent k8s distributions');
+    // Show what's using the port for debugging
+    await exec.exec('bash', ['-c', 'ss -tlnp 2>/dev/null | grep ":6443" || true'], {
+      ignoreReturnCode: true,
+      silent: false
+    });
+  }
+  
+  // Give an additional moment for any remaining cleanup
   await new Promise(resolve => setTimeout(resolve, 1000));
   
   // Unmount all KubeSolo-related mount points (critical for cleanup)
