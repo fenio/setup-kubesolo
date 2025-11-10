@@ -51,6 +51,17 @@ async function stopKubeSolo(): Promise<void> {
     core.info('  Disabled KubeSolo service');
   }
   
+  // Force kill any remaining KubeSolo processes
+  core.info('  Ensuring all KubeSolo processes are terminated...');
+  await exec.exec('sudo', ['systemctl', 'kill', '--signal=SIGKILL', 'kubesolo'], { 
+    ignoreReturnCode: true, 
+    silent: true 
+  });
+  
+  // Give a moment for processes to fully terminate and release file handles
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  core.info('  All KubeSolo processes terminated');
+  
   // Remove KubeSolo files and directories one by one for better error visibility
   const filesToRemove = [
     '/var/lib/kubesolo',
