@@ -75,11 +75,20 @@ async function stopKubeSolo(): Promise<void> {
   ];
   
   for (const file of filesToRemove) {
-    const result = await exec.exec('sudo', ['rm', '-rf', file], { ignoreReturnCode: true, silent: true });
+    let stderr = '';
+    const result = await exec.exec('sudo', ['rm', '-rf', file], { 
+      ignoreReturnCode: true, 
+      silent: true,
+      listeners: {
+        stderr: (data: Buffer) => {
+          stderr += data.toString();
+        }
+      }
+    });
     if (result === 0) {
       core.info(`  Removed ${file}`);
     } else {
-      core.warning(`  Failed to remove ${file} (this may be expected if it doesn't exist)`);
+      core.warning(`  Failed to remove ${file}: ${stderr.trim() || 'unknown error'}`);
     }
   }
   
