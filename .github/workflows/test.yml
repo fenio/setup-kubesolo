@@ -8,6 +8,11 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Prevent concurrent test runs on the same runner
+concurrency:
+  group: kubesolo-test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Job 1: Basic functionality test - setup, use KubeSolo, cleanup runs automatically
   test-kubesolo-functionality:
