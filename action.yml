@@ -20,7 +20,7 @@ inputs:
   timeout:
     description: 'Timeout in seconds to wait for cluster readiness'
     required: false
-    default: '60'
+    default: '120'
 
 outputs:
   kubeconfig:

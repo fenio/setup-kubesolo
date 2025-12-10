@@ -39,14 +39,14 @@ Before submitting a PR, ensure:
 - Use clear, descriptive variable names
 - Add comments for complex logic
 - Follow shell scripting best practices
-- Keep the action.yml file well-organized
+- Keep the action.yml and setup.sh files well-organized
 
 ## Development Setup
 
 To test your changes locally:
 
 1. Fork and clone the repository
-2. Make your changes to `action.yml`
+2. Make your changes to `action.yml` or `setup.sh`
 3. Create a test workflow in `.github/workflows/` that uses your local action:
 
 ```yaml

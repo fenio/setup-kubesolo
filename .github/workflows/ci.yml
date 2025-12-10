@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test-kubesolo-functionality:
+    runs-on: ubuntu-latest
+    name: Test KubeSolo Functionality
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check initial state
+        run: |
+          echo "=== Checking Initial System State ==="
+          ! which kubesolo && echo "✓ kubesolo not installed initially" || (echo "✗ kubesolo already installed" && exit 1)
+          
+      - name: Setup KubeSolo
+        id: kubesolo
+        uses: ./
+        with:
+          version: 'latest'
+          wait-for-ready: 'true'
+          timeout: '120'
+      
+      - name: Verify KubeSolo is installed and running
+        run: |
+          echo "=== Verifying KubeSolo Installation ==="
+          which kubesolo && echo "✓ kubesolo binary found at $(which kubesolo)" || (echo "✗ kubesolo binary not found" && exit 1)
+          sudo systemctl is-active kubesolo && echo "✓ kubesolo service is active" || (echo "✗ kubesolo service not active" && exit 1)
+      
+      - name: Test kubectl access
+        env:
+          KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
+        run: |
+          echo "=== Testing Kubernetes Functionality ==="
+          kubectl version --client
+          kubectl cluster-info
+          kubectl get nodes -o wide
+          kubectl get pods -A
+          
+      - name: Deploy test workload
+        env:
+          KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
+        run: |
+          echo "=== Deploying Test Workload ==="
+          
+          kubectl create deployment nginx --image=nginx:alpine
+          kubectl expose deployment nginx --port=80 --type=ClusterIP
+          kubectl wait --for=condition=available --timeout=120s deployment/nginx
+          
+          # Test connectivity
+          POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
+          echo "✓ Workload is functioning correctly"
