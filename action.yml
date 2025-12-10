@@ -25,9 +25,17 @@ inputs:
 outputs:
   kubeconfig:
     description: 'Path to the kubeconfig file'
+    value: ${{ steps.setup.outputs.kubeconfig }}
 
 runs:
-  using: 'node24'
-  main: 'dist/index.js'
-  post: 'dist/index.js'
+  using: 'composite'
+  steps:
+    - name: Setup KubeSolo
+      id: setup
+      shell: bash
+      run: ${{ github.action_path }}/setup.sh
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_WAIT_FOR_READY: ${{ inputs.wait-for-ready }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
 

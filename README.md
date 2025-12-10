@@ -5,10 +5,10 @@ A GitHub Action for installing and configuring [KubeSolo](https://github.com/por
 ## Features
 
 - ✅ Automatic installation of KubeSolo
-- ✅ Fast disabling of conflicting container runtimes (Docker, Podman, containerd)
+- ✅ Simple bash script implementation - no hidden complexity
 - ✅ Waits for cluster readiness (checks systemd service and API server port)
 - ✅ Outputs kubeconfig path for easy integration
-- ✅ **Automatic cleanup and system restoration** - Runs post-cleanup after your workflow completes
+- ✅ No cleanup required - designed for ephemeral GitHub Actions runners
 
 ## Quick Start
 
@@ -25,7 +25,7 @@ jobs:
       
       - name: Setup KubeSolo
         id: kubesolo
-        uses: fenio/setup-kubesolo@v3
+        uses: fenio/setup-kubesolo@v4
       
       - name: Deploy and test
         env:
@@ -33,8 +33,6 @@ jobs:
         run: |
           kubectl apply -f k8s/
           kubectl wait --for=condition=available --timeout=60s deployment/my-app
-      
-      # Cleanup happens automatically after this job completes!
 ```
 
 ## Inputs
@@ -53,20 +51,13 @@ jobs:
 
 ## How It Works
 
-### Setup Phase
-1. Temporarily disables conflicting container runtimes (Docker, containerd, podman)
-2. Backs up runtime binaries by renaming them to `.bak`
-3. Installs KubeSolo
-4. Waits for the cluster to become ready
+This action runs a simple bash script that:
+1. Downloads and installs KubeSolo binary
+2. Creates a systemd service for KubeSolo
+3. Waits for the cluster to become ready
+4. Exports the kubeconfig path for use in subsequent steps
 
-### Automatic Cleanup (Post-run)
-After your workflow steps complete (whether successful or failed), the action automatically:
-1. Stops and removes KubeSolo
-2. Restores all backed-up container runtime binaries
-3. Unmasks and restarts container runtime services
-4. Leaves your system in its original state
-
-This is achieved using GitHub Actions' `post:` hook, similar to how `actions/checkout` cleans up after itself.
+**No cleanup needed** - GitHub Actions runners are ephemeral and destroyed after each workflow run, so there's no need to restore system state.
 
 ## Requirements
 
@@ -79,23 +70,26 @@ If the cluster doesn't become ready in time, increase the timeout:
 
 ```yaml
 - name: Setup KubeSolo
-  uses: fenio/setup-kubesolo@v3
+  uses: fenio/setup-kubesolo@v4
   with:
     timeout: '600'  # 10 minutes
 ```
 
 ## Development
 
-This action is written in TypeScript and compiled to JavaScript using `@vercel/ncc`.
+This action uses a simple bash script (`setup.sh`) with no compilation required.
 
-### Building
+To test locally on a Linux VM:
 
 ```bash
-npm install
-npm run build
-```
+export INPUT_VERSION="latest"
+export INPUT_WAIT_FOR_READY="true"
+export INPUT_TIMEOUT="60"
+export GITHUB_ENV=/tmp/github_env
+export GITHUB_OUTPUT=/tmp/github_output
 
-The compiled output in `dist/` must be committed to the repository for the action to work.
+bash setup.sh
+```
 
 ## License
 

@@ -2,133 +2,84 @@
 
 This file provides comprehensive documentation about the setup-kubesolo GitHub Action for AI agents and developers working with this codebase.
 
-## ⚠️ CRITICAL PRINCIPLE: SYSTEM STATE RESTORATION ⚠️
-
-**THE MOST IMPORTANT REQUIREMENT OF THIS ACTION:**
-
-This action MUST leave the system in EXACTLY the same state as it was before the action ran. This is a non-negotiable requirement.
-
-### Why This Matters
-GitHub Actions runners may be reused across different workflows. Any changes made during setup (disabling Docker, modifying binaries, installing services) MUST be completely reversed during cleanup. Failure to restore the system state can break subsequent workflows that depend on container runtimes.
-
-### What Must Be Restored
-Every operation in the setup phase has a corresponding cleanup operation:
-
-| Setup Operation | Cleanup Operation | Location |
-|----------------|-------------------|----------|
-| Stop & mask container runtime services | Unmask & restart services | `src/cleanup.ts:92-142` |
-| Rename binaries to `.bak` | Restore from `.bak` to original | `src/cleanup.ts:73-90` |
-| Remove runtime sockets | Recreated automatically by service restart | N/A |
-| Install KubeSolo binary (`/usr/local/bin/kubesolo`) | Remove KubeSolo binary | `src/cleanup.ts:57` |
-| Create systemd service (`/etc/systemd/system/kubesolo.service`) | Stop, disable, remove service & reload daemon | `src/cleanup.ts:39-68` |
-| Create KubeSolo data directory (`/var/lib/kubesolo`) | Remove entire directory and contents | `src/cleanup.ts:56` |
-| KubeSolo creates CNI directories (`/opt/cni`, `/var/lib/cni`, `/etc/cni`) | Remove all CNI directories | `src/cleanup.ts:59-61` |
-| KubeSolo creates log directories (`/var/log/pods`, `/var/log/containers`) | Remove log directories | `src/cleanup.ts:62-63` |
-| Set KUBECONFIG environment variable | No cleanup needed - job-scoped only | N/A |
-
-### Cleanup Guarantees
-- Cleanup runs automatically via GitHub Actions `post:` hook - it ALWAYS runs, even if the workflow fails
-- Cleanup is non-failing (`ignoreReturnCode: true`) to ensure it completes even if some operations encounter errors
-- The cleanup phase is tested to verify system restoration
-
-### When Making Changes
-**BEFORE adding any new setup operation, you MUST add the corresponding cleanup operation.**
-
-If you:
-- Create a file → Delete it in cleanup
-- Modify a config → Restore original in cleanup
-- Stop a service → Restart it in cleanup
-- Install a package → Uninstall it in cleanup
-
-**Violating this principle will break other workflows and is unacceptable.**
-
----
-
 ## Project Overview
 
-**setup-kubesolo** is a GitHub Action that installs and configures KubeSolo - an ultra-lightweight, single-node Kubernetes distribution perfect for CI/CD pipelines. The action handles both setup and automatic cleanup/restoration of the system state.
+**setup-kubesolo** is a GitHub Action that installs and configures KubeSolo - an ultra-lightweight, single-node Kubernetes distribution perfect for CI/CD pipelines. This action uses a simple shell script approach for maximum simplicity and transparency.
 
 ### Key Features
+- Simple bash script implementation (no Node.js/TypeScript complexity)
 - Automatic installation of KubeSolo with version selection
-- Smart disabling of conflicting container runtimes (Docker, Podman, containerd)
 - Cluster readiness checks with configurable timeout
-- **Automatic post-run cleanup and complete system restoration** (MOST IMPORTANT FEATURE)
 - Outputs kubeconfig path for easy integration with kubectl
+- No cleanup required - relies on GitHub Actions' ephemeral runners
+
+### Design Philosophy
+This action prioritizes **simplicity and transparency** over complex state management:
+- **Single shell script**: All logic in one readable bash script
+- **No cleanup**: Designed for ephemeral GitHub Actions runners that are discarded after use
+- **No dependencies**: Only requires bash and standard Linux utilities
+- **No compilation**: No build step needed - the script is used directly
 
 ## Architecture
 
-### Entry Point Flow
-The action uses GitHub Actions' `post:` hook mechanism for automatic cleanup:
+### Simple Flow
+The action is a **composite action** that runs a single bash script (`setup.sh`):
 
-1. **Main Run** (`src/index.ts`): Entry point that routes to either main or cleanup based on state
-2. **Setup Phase** (`src/main.ts`): Handles KubeSolo installation and configuration
-3. **Cleanup Phase** (`src/cleanup.ts`): Automatically runs after job completion for restoration
-
-### Execution Phases
-
-#### Phase 1: Setup (src/main.ts)
 ```
-disableContainerRuntimes() → installKubeSolo() → waitForClusterReady()
+setup.sh → Install KubeSolo → Wait for Ready → Export KUBECONFIG
 ```
 
-**disableContainerRuntimes()**
-- Stops and masks container runtime services (docker, containerd, podman)
-- Backs up runtime binaries by renaming to `.bak` extension
-- Cleans up runtime sockets
-- Location: `src/main.ts:36-71`
-
-**installKubeSolo(version)**
-- Resolves 'latest' version or uses specified version
-- Detects system architecture (amd64/arm64/arm)
-- Downloads and extracts KubeSolo binary from GitHub releases
-- Creates systemd service configuration
-- Starts and enables KubeSolo service
-- Location: `src/main.ts:73-179`
-
-**waitForClusterReady(timeout)**
-- Polls for cluster readiness with configurable timeout
-- Checks: service active → API port listening → kubeconfig exists → kubectl connects → node Ready
-- Shows diagnostics if timeout occurs
-- Sets KUBECONFIG output and environment variable
-- Location: `src/main.ts:181-276`
-
-#### Phase 2: Cleanup (src/cleanup.ts)
-```
-stopKubeSolo() → restoreContainerRuntimes() → restoreServices()
-```
-
-**stopKubeSolo()**
-- Stops and disables KubeSolo systemd service
-- Removes all KubeSolo files and service configuration
-- Location: `src/cleanup.ts:29-59`
-
-**restoreContainerRuntimes()**
-- Restores backed-up runtime binaries from `.bak` files
-- Location: `src/cleanup.ts:61-78`
-
-**restoreServices()**
-- Unmasks container runtime services
-- Attempts to restart previously running services
-- Location: `src/cleanup.ts:80-104`
-
-## File Structure
+### File Structure
 
 ```
 setup-kubesolo/
-├── src/
-│   ├── index.ts         # Entry point - routes to main or cleanup
-│   ├── main.ts          # Setup phase implementation
-│   └── cleanup.ts       # Cleanup phase implementation
-├── dist/                # Compiled JavaScript (via @vercel/ncc)
-│   ├── index.js         # Bundled main entry point
-│   └── *.map            # Source maps
-├── action.yml           # GitHub Action metadata and interface
-├── package.json         # Node.js dependencies and scripts
-├── tsconfig.json        # TypeScript configuration
-└── .github/workflows/   # CI/CD workflows
-    ├── test.yml         # Test workflow
-    └── release.yml      # Release workflow
+├── setup.sh             # Main installation script (the entire implementation)
+├── action.yml           # GitHub Action metadata (defines composite action)
+├── README.md            # User-facing documentation
+├── AGENTS.md            # This file - developer/AI documentation
+├── CHANGELOG.md         # Version history
+├── CONTRIBUTING.md      # Contribution guidelines
+└── LICENSE              # MIT license
 ```
+
+## How It Works
+
+### action.yml (Action Interface)
+Defines a **composite action** that:
+- Accepts three inputs: `version`, `wait-for-ready`, `timeout`
+- Runs `setup.sh` with inputs passed as environment variables
+- Outputs the `kubeconfig` path for subsequent workflow steps
+
+### setup.sh (Implementation)
+A single bash script that:
+
+1. **Resolves Version** (lines 13-24)
+   - If version is "latest", queries GitHub API for latest release tag
+   - Otherwise uses the specified version
+
+2. **Detects Architecture** (lines 26-42)
+   - Runs `uname -m` to detect system architecture
+   - Maps to KubeSolo binary naming: amd64, arm64, or arm
+
+3. **Downloads & Installs Binary** (lines 46-58)
+   - Constructs download URL from GitHub releases
+   - Downloads and extracts tar.gz
+   - Installs to `/usr/local/bin/kubesolo`
+
+4. **Creates systemd Service** (lines 60-89)
+   - Creates `/etc/systemd/system/kubesolo.service`
+   - Enables and starts the service
+   - KubeSolo runs as a systemd service in the background
+
+5. **Exports KUBECONFIG** (lines 94-107)
+   - Sets `GITHUB_ENV` for subsequent workflow steps
+   - Sets `GITHUB_OUTPUT` for action output
+   - Makes kubeconfig readable by runner user
+
+6. **Waits for Cluster Ready** (lines 111-152, if enabled)
+   - Polls for cluster readiness with configurable timeout
+   - Checks: service active → port 6443 listening → kubeconfig exists → kubectl connects → node Ready
+   - Shows diagnostic logs if timeout occurs
 
 ## Key Technical Details
 
@@ -143,52 +94,28 @@ setup-kubesolo/
 - `kubeconfig`: Path to kubeconfig file (`/var/lib/kubesolo/pki/admin/admin.kubeconfig`)
 
 **Runtime:**
-- Node.js 24 (`node24`)
-- Main entry: `dist/index.js`
-- Post hook: `dist/index.js` (same file, different execution path)
+- Composite action (runs shell script directly)
+- No Node.js or compilation required
+- Shell: bash
 
-### Dependencies
+### No Dependencies Required
+The action only requires:
+- Bash shell
+- Standard Linux utilities: `curl`, `tar`, `sudo`, `systemctl`
+- These are all available by default on GitHub Actions runners
 
-**Production:**
-- `@actions/core`: GitHub Actions toolkit for inputs/outputs/logging
-- `@actions/exec`: Execute shell commands
-- `js-yaml`: YAML parsing (if needed for kubeconfig)
-
-**Development:**
-- `@vercel/ncc`: Compiles TypeScript and bundles dependencies into single file
-- `typescript`: TypeScript compiler
-
-### Build Process
-
-```bash
-npm run build  # Uses @vercel/ncc to create dist/index.js
-```
-
-**Important:** The `dist/` directory must be committed to the repository for the action to work, as GitHub Actions cannot run build steps before execution.
-
-## State Management
-
-The action uses `core.saveState()` and `core.getState()` to coordinate between main and cleanup phases:
-
-```typescript
-// src/main.ts - Set state during main run
-core.saveState('isPost', 'true');
-
-// src/index.ts - Check state to determine phase
-if (!core.getState('isPost')) {
-  // Main run
-  main()
-} else {
-  // Post run (cleanup)
-  cleanup()
-}
-```
+### No Cleanup Needed
+GitHub Actions runners are **ephemeral** - they are destroyed after the workflow completes. This means:
+- No need to restore system state
+- No need to stop services or remove files
+- No need for complex cleanup logic
+- Simpler, more maintainable code
 
 ## System Requirements
 
 - **OS:** Linux (tested on ubuntu-latest)
 - **Permissions:** sudo access (available by default in GitHub Actions)
-- **Network:** Internet access to download KubeSolo releases
+- **Network:** Internet access to download KubeSolo releases from GitHub
 
 ## Common Modification Scenarios
 
@@ -203,101 +130,146 @@ inputs:
     default: 'default-value'
 ```
 
-2. Read input in `src/main.ts`:
-```typescript
-const newOption = core.getInput('new-option');
+2. Pass to script via environment variable in `action.yml`:
+```yaml
+env:
+  INPUT_NEW_OPTION: ${{ inputs.new-option }}
 ```
 
-3. Update README.md documentation
+3. Read in `setup.sh`:
+```bash
+NEW_OPTION="${INPUT_NEW_OPTION:-default-value}"
+```
+
+4. Update README.md documentation
 
 ### Modifying Installation Logic
 
-The installation logic is in `src/main.ts:73-179`. Key areas:
-- Version resolution: lines 80-91
-- Architecture detection: lines 93-118
-- Binary download: lines 120-134
-- Systemd service configuration: lines 138-162
+All installation logic is in `setup.sh`. Key sections:
+- Version resolution: lines 13-24
+- Architecture detection: lines 26-42
+- Binary download: lines 46-51
+- Systemd service creation: lines 60-89
+- Cluster readiness checks: lines 111-152
 
-### Adjusting Cleanup Behavior
+### Adjusting Readiness Checks
 
-**CRITICAL:** Cleanup logic is in `src/cleanup.ts`. The cleanup is designed to be non-failing (uses `ignoreReturnCode: true`) to avoid breaking workflows if cleanup encounters issues.
-
-**MANDATORY RULE:** Every modification to setup logic MUST have a corresponding cleanup operation. Review the "CRITICAL PRINCIPLE: SYSTEM STATE RESTORATION" section at the top of this document before making any changes.
+The readiness polling logic is in lines 111-152 of `setup.sh`. It checks multiple conditions in sequence:
+1. Service is active
+2. Port 6443 is listening
+3. Kubeconfig file exists
+4. kubectl can connect
+5. Node status is Ready
 
 ## Testing Strategy
 
 ### Local Testing
-Cannot run GitHub Actions locally, but you can:
-1. Extract shell commands from TypeScript
-2. Test shell commands manually on a Linux VM
-3. Use act (https://github.com/nektos/act) for local action simulation
+You can test the script directly on a Linux VM:
+```bash
+export INPUT_VERSION="latest"
+export INPUT_WAIT_FOR_READY="true"
+export INPUT_TIMEOUT="60"
+export GITHUB_ENV=/tmp/github_env
+export GITHUB_OUTPUT=/tmp/github_output
+
+bash setup.sh
+```
 
 ### CI Testing
-The repository should have `.github/workflows/test.yml` that:
-1. Installs the action
+Create a test workflow (`.github/workflows/test.yml`) that:
+1. Uses the action to install KubeSolo
 2. Verifies cluster is ready
-3. Runs kubectl commands
-4. Verifies cleanup restores system state
+3. Runs kubectl commands to test cluster functionality
 
 ### Testing Checklist
-**Setup Phase:**
 - [ ] KubeSolo installs successfully
 - [ ] Cluster becomes ready within timeout
 - [ ] kubectl can connect and list nodes
-
-**Cleanup Phase (CRITICAL - MUST VERIFY):**
-- [ ] Cleanup removes ALL KubeSolo files
-- [ ] Container runtime services are restored to original state
-- [ ] All backed-up binaries are restored
-- [ ] No leftover processes or sockets
-- [ ] System can run Docker/containerd workflows after cleanup
-- [ ] No orphaned systemd services remain
+- [ ] KUBECONFIG environment variable is set correctly
+- [ ] Works with different versions (latest, specific version tags)
+- [ ] Works on different architectures (if applicable)
 
 ## Debugging
 
-### Enable Debug Logging
-Set repository secret: `ACTIONS_STEP_DEBUG = true`
+### Enable Debug Mode
+In your workflow, set:
+```yaml
+- uses: fenio/setup-kubesolo@v4
+  env:
+    RUNNER_DEBUG: 1
+```
+
+Or set repository secret: `ACTIONS_STEP_DEBUG = true`
 
 ### Key Log Messages
-- "Starting KubeSolo setup..." - Main phase begins
-- "Container runtimes disabled" - Runtime backup complete
-- "KubeSolo installed successfully" - Installation complete
-- "KubeSolo cluster is fully ready!" - Cluster ready
-- "Starting cleanup..." - Cleanup phase begins
-- "System state restored" - Cleanup complete
+- "Starting KubeSolo setup..." - Script begins
+- "Resolving latest version..." - Fetching version from GitHub API
+- "Architecture: ..." - System architecture detected
+- "Downloading from: ..." - Binary download URL
+- "Starting KubeSolo service..." - systemd service starting
+- "KUBECONFIG exported: ..." - Environment variable set
+- "Waiting for KubeSolo cluster to be ready..." - Readiness checks begin
+- "✓ KubeSolo cluster is fully ready!" - Cluster ready
+- "✓ KubeSolo setup completed successfully!" - Complete
 
 ### Diagnostic Information
-When cluster readiness times out, `showDiagnostics()` (`src/main.ts:278-301`) displays:
-- KubeSolo service status
-- Journal logs (last 100 lines)
-- Kubeconfig directory contents
-- Listening ports
-- Network interfaces
+When cluster readiness times out, the script displays:
+- KubeSolo service status (`systemctl status kubesolo`)
+- Journal logs (last 100 lines from `journalctl`)
+
+### Manual Verification
+SSH into the runner (using action like `mxschmitt/action-tmate`) and check:
+```bash
+sudo systemctl status kubesolo
+sudo journalctl -u kubesolo -n 100
+kubectl --kubeconfig /var/lib/kubesolo/pki/admin/admin.kubeconfig get nodes
+```
 
 ## Version History
 
-- **v3.x**: TypeScript rewrite with automatic cleanup
-- **v2.x**: Previous iteration (if applicable)
-- **v1.x**: Initial release (if applicable)
+- **v4.x**: Simplified shell script implementation (no TypeScript, no cleanup)
+- **v3.x**: TypeScript implementation with automatic cleanup
+- **v2.x and earlier**: Previous implementations
 
 ## Related Resources
 
 - **KubeSolo Project**: https://github.com/portainer/kubesolo
 - **GitHub Actions Documentation**: https://docs.github.com/actions
-- **Node.js Actions Guide**: https://docs.github.com/actions/creating-actions/creating-a-javascript-action
+- **Composite Actions Guide**: https://docs.github.com/actions/creating-actions/creating-a-composite-action
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
 
 ### Development Workflow
-1. Make changes to `src/*.ts`
-2. **CRITICAL:** If modifying setup phase, add corresponding cleanup operations
-3. Run `npm run build` to compile
-4. Commit both `src/` and `dist/` changes
-5. Test in a workflow on GitHub - verify BOTH setup AND cleanup work correctly
-6. Test that subsequent workflows using Docker/containerd still work after your action runs
-7. Create pull request
+1. Make changes to `setup.sh` or `action.yml`
+2. Test locally on a Linux VM if possible
+3. Commit changes (no build step needed!)
+4. Test in a workflow on GitHub
+5. Create pull request
 
 ### Release Process
-Releases are typically managed via GitHub Actions workflow (`.github/workflows/release.yml`). Tags should follow semantic versioning (e.g., v3.0.0).
+Releases are typically managed via GitHub Actions workflow (`.github/workflows/release.yml`). Tags should follow semantic versioning (e.g., v4.0.0).
+
+### Why No Cleanup?
+
+**GitHub Actions runners are ephemeral** - they are created fresh for each workflow run and destroyed immediately after. This means:
+
+1. **No shared state**: Each workflow gets a clean runner
+2. **No conflicts**: Your action won't interfere with other workflows
+3. **Automatic cleanup**: The entire runner (with all files, processes, services) is discarded
+4. **Simpler code**: No need for complex cleanup logic that might fail
+
+This is the recommended approach for GitHub Actions that modify the system. The cleanup complexity in v3.x was unnecessary for the target environment.
+
+### Key Insights for AI Agents
+
+1. **Simplicity wins**: A 156-line bash script is easier to understand and maintain than hundreds of lines of TypeScript with state management
+
+2. **Know your environment**: GitHub Actions runners are ephemeral, so cleanup is automatic
+
+3. **No compilation = faster development**: Direct script execution means no build step
+
+4. **Composite actions are powerful**: They can run shell scripts directly without Node.js
+
+5. **Transparency**: Anyone can read the bash script and understand exactly what it does

@@ -17,10 +17,4 @@ coverage/
 *.tmp
 *.log
 
-# Node modules and build artifacts
-node_modules/
-lib/
-*.tsbuildinfo
-
-# Keep dist for GitHub Actions
-# dist/ is intentionally NOT ignored - it must be committed for the action to work
+# No build artifacts needed - we use a simple shell script
