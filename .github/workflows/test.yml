@@ -23,8 +23,8 @@ jobs:
       containerd-was-installed: ${{ steps.check-initial.outputs.containerd-installed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
       - name: Check initial state
         id: check-initial
         run: |
@@ -61,7 +61,7 @@ jobs:
           else
             echo "✗ containerd not found"
           fi
-          
+
       - name: Setup KubeSolo
         id: kubesolo
         uses: ./
@@ -69,13 +69,13 @@ jobs:
           version: 'latest'
           wait-for-ready: 'true'
           timeout: '120'
-      
+
       - name: Verify KubeSolo is installed and running
         run: |
           echo "=== Verifying KubeSolo Installation ==="
           which kubesolo && echo "✓ KubeSolo binary found" || (echo "✗ KubeSolo binary not found" && exit 1)
           systemctl is-active kubesolo && echo "✓ KubeSolo service is active" || (echo "✗ KubeSolo service not active" && exit 1)
-          
+
       - name: Verify container runtimes are disabled
         run: |
           echo "=== Verifying Container Runtimes Are Disabled ==="
@@ -117,7 +117,7 @@ jobs:
             echo "✗ containerd binary exists but was not backed up"
             exit 1
           fi
-      
+
       - name: Test kubectl access
         run: |
           echo "=== Testing Kubernetes Functionality ==="
@@ -126,7 +126,7 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
           kubectl get pods -A
-          
+
       - name: Deploy test workload
         run: |
           echo "=== Deploying Test Workload ==="
@@ -140,9 +140,9 @@ jobs:
           POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
           kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
           echo "✓ Workload is functioning correctly"
-          
+
       # NOTE: Cleanup runs automatically via post: hook after this job completes
-      
+
   # Job 2: CRITICAL TEST - Verify cleanup worked by running the action again
   # This simulates a realistic scenario: a subsequent workflow that also needs KubeSolo
   # If cleanup didn't work, this job would fail because Docker/containerd would still be masked
@@ -153,8 +153,8 @@ jobs:
     if: always()
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
       - name: Verify system state restoration
         env:
           DOCKER_WAS_INSTALLED: ${{ needs.test-kubesolo-functionality.outputs.docker-was-installed }}
@@ -235,7 +235,7 @@ jobs:
             echo "ℹ containerd was not installed originally - skipping containerd tests"
             echo "✓ This is expected behavior for systems without containerd"
           fi
-          
+
       - name: Verify no KubeSolo remnants from previous job
         run: |
           echo "=== Verifying Previous Cleanup Was Complete ==="
@@ -264,14 +264,14 @@ jobs:
             exit 1
           fi
           echo "✓ Port 6443 is free and available for other k8s distributions"
-          
+
       - name: Run KubeSolo again to prove it works after cleanup
         id: kubesolo
         uses: ./
         with:
           version: 'latest'
           timeout: '120'
-        
+
       - name: Verify second KubeSolo instance works
         run: |
           echo "=== Verifying Second KubeSolo Installation Works ==="
@@ -281,9 +281,9 @@ jobs:
           kubectl create deployment nginx --image=nginx:alpine
           kubectl wait --for=condition=available --timeout=60s deployment/nginx
           echo "✓ Second KubeSolo instance is fully functional"
-          
+
       # Cleanup will run automatically again for this job
-      
+
   # Job 3: FINAL TEST - Run a pure Docker workflow after everything
   # This proves the action can be used multiple times without breaking the system
   test-docker-after-multiple-runs:

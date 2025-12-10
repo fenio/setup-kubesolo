@@ -21,34 +21,34 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v6
+
       - name: Setup KubeSolo
         id: kubesolo
         uses: fenio/setup-kubesolo@v3
-      
+
       - name: Deploy and test
         env:
           KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
         run: |
           kubectl apply -f k8s/
           kubectl wait --for=condition=available --timeout=60s deployment/my-app
-      
+
       # Cleanup happens automatically after this job completes!
 ```
 
 ## Inputs
 
-| Input | Description | Default |
-|-------|-------------|---------|
-| `version` | KubeSolo version to install (e.g., `v0.1.7-beta`) or `latest` | `latest` |
-| `wait-for-ready` | Wait for cluster to be ready before completing | `true` |
-| `timeout` | Timeout in seconds to wait for cluster readiness | `60` |
+| Input            | Description                                              | Default  |
+|------------------|----------------------------------------------------------|----------|
+| `version`        | KubeSolo version to install (e.g., `v1.0.0`) or `latest` | `latest` |
+| `wait-for-ready` | Wait for cluster to be ready before completing           | `true`   |
+| `timeout`        | Timeout in seconds to wait for cluster readiness         | `60`     |
 
 ## Outputs
 
-| Output | Description |
-|--------|-------------|
+| Output       | Description                                                                  |
+|--------------|------------------------------------------------------------------------------|
 | `kubeconfig` | Path to the kubeconfig file (`/var/lib/kubesolo/pki/admin/admin.kubeconfig`) |
 
 ## How It Works
