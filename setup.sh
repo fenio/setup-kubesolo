@@ -57,6 +57,14 @@ sudo chmod +x /usr/local/bin/kubesolo
 # Create data directory
 sudo mkdir -p /var/lib/kubesolo
 
+# Clean up existing CNI directory to prevent conflicts
+# KubeSolo needs to create a symlink at /opt/cni/bin for its embedded CNI plugins
+# This can fail if the directory already exists and contains files (e.g., on self-hosted runners)
+if [ -d "/opt/cni/bin" ]; then
+    echo "Cleaning existing CNI directory to prevent conflicts..."
+    sudo rm -rf /opt/cni/bin
+fi
+
 # Step 4: Create systemd service
 echo "Creating systemd service..."
 cat << 'EOF' | sudo tee /etc/systemd/system/kubesolo.service > /dev/null
