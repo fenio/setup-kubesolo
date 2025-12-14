@@ -2,88 +2,71 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
-  test-kubesolo-functionality:
+  test:
     runs-on: ubuntu-latest
-    name: Test KubeSolo Functionality
-    
+    name: Test KubeSolo
+
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Debug iptables before cleanup
+      - name: Check initial state
         run: |
-          echo "=== iptables filter table ==="
-          sudo iptables -L -n -v
-          echo ""
-          echo "=== iptables nat table ==="
-          sudo iptables -t nat -L -n -v
-          echo ""
-          echo "=== iptables mangle table ==="
-          sudo iptables -t mangle -L -n -v
-          echo ""
-          echo "=== iptables raw table ==="
-          sudo iptables -t raw -L -n -v
-          echo ""
-          echo "=== Network interfaces ==="
-          ip link show
-          echo ""
-          echo "=== Docker/container processes ==="
-          ps aux | grep -E 'docker|containerd|podman' || echo "No container processes found"
+          echo "=== Checking initial system state ==="
+          if command -v kubesolo &> /dev/null; then
+            echo "✗ kubesolo already installed"
+            exit 1
+          fi
+          echo "✓ kubesolo not installed"
 
-      - name: Install KubeSolo
+      - name: Setup KubeSolo
+        id: setup
         uses: ./
         with:
           wait-for-ready: 'true'
           timeout: '120'
 
-      - name: Debug iptables after KubeSolo installation
+      - name: Verify installation
         run: |
-          echo "=== iptables filter table ==="
-          sudo iptables -L -n -v
-          echo ""
-          echo "=== iptables nat table ==="
-          sudo iptables -t nat -L -n -v
-          echo ""
-          echo "=== iptables mangle table ==="
-          sudo iptables -t mangle -L -n -v
-          echo ""
-          echo "=== iptables raw table ==="
-          sudo iptables -t raw -L -n -v
-          echo ""
-          echo "=== Network interfaces ==="
-          ip link show
-          echo ""
-          echo "=== KubeSolo/container processes ==="
-          ps aux | grep -E 'kubesolo|containerd|flannel|cni' || echo "No relevant processes found"
+          echo "=== Verifying installation ==="
+          command -v kubesolo && echo "✓ kubesolo binary found" || { echo "✗ kubesolo binary not found"; exit 1; }
+          systemctl is-active kubesolo && echo "✓ kubesolo service is active" || { echo "✗ kubesolo service not active"; exit 1; }
 
       - name: Test kubectl access
+        env:
+          KUBECONFIG: ${{ steps.setup.outputs.kubeconfig }}
         run: |
-          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
+          echo "=== Testing kubectl access ==="
+          kubectl version --client
           kubectl cluster-info
+          kubectl get nodes -o wide
           kubectl get pods -A
 
-      - name: Deploy and test workload
+      - name: Deploy test workload
+        env:
+          KUBECONFIG: ${{ steps.setup.outputs.kubeconfig }}
         run: |
-          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
-          
+          echo "=== Deploying test workload ==="
           kubectl create deployment nginx --image=nginx:alpine
           kubectl expose deployment nginx --port=80 --type=ClusterIP
           kubectl wait --for=condition=available --timeout=120s deployment/nginx
-          
+
           POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
-          kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
-          echo "✓ Workload test passed"
+          kubectl exec "$POD_NAME" -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
+          echo "✓ Workload is functioning correctly"
 
       - name: Test pod networking
+        env:
+          KUBECONFIG: ${{ steps.setup.outputs.kubeconfig }}
         run: |
-          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
-          
-          # Wait for CoreDNS
+          echo "=== Testing pod networking ==="
+          # Wait for CoreDNS to be ready
           for i in $(seq 1 30); do
             if kubectl get pods -n kube-system 2>/dev/null | grep -q "coredns.*1/1.*Running"; then
               echo "✓ CoreDNS ready"
@@ -91,10 +74,10 @@ jobs:
             fi
             sleep 2
           done
-          
+
           kubectl run connectivity-test --image=busybox:stable --restart=Never -- sleep 300
           kubectl wait --for=condition=ready --timeout=60s pod/connectivity-test
-          
+
           # Test DNS with retries
           for i in $(seq 1 10); do
             if kubectl exec connectivity-test -- nslookup google.com; then
@@ -104,9 +87,8 @@ jobs:
             echo "DNS not ready yet, retrying... ($i/10)"
             sleep 2
           done
-          
-          # Test internet
+
           kubectl exec connectivity-test -- wget -q -O- --timeout=10 http://ifconfig.me && echo ""
-          echo "✓ Internet connectivity working"
-          
+          echo "✓ Pod networking is working"
+
           kubectl delete pod connectivity-test --ignore-not-found
