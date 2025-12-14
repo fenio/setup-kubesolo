@@ -33,9 +33,9 @@ runs:
     - name: Setup KubeSolo
       id: setup
       shell: bash
-      run: ${{ github.action_path }}/setup.sh
       env:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_WAIT_FOR_READY: ${{ inputs.wait-for-ready }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}
+      run: ${{ github.action_path }}/setup.sh
 

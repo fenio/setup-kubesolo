@@ -1,6 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
+echo "::group::Installing KubeSolo"
 echo "Starting KubeSolo setup..."
 
 # Get inputs from environment variables (set by GitHub Actions)
@@ -10,12 +11,12 @@ TIMEOUT="${INPUT_TIMEOUT:-60}"
 
 echo "Configuration: version=$VERSION, wait-for-ready=$WAIT_FOR_READY, timeout=${TIMEOUT}s"
 
-# Step 1: Resolve version if 'latest'
+# Resolve version if 'latest'
 if [ "$VERSION" = "latest" ]; then
     echo "Resolving latest version..."
     ACTUAL_VERSION=$(curl -sL https://api.github.com/repos/portainer/kubesolo/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
     if [ -z "$ACTUAL_VERSION" ]; then
-        echo "Error: Failed to resolve latest version from GitHub API"
+        echo "::error::Failed to resolve latest version from GitHub API"
         exit 1
     fi
     echo "Latest version: $ACTUAL_VERSION"
@@ -29,14 +30,14 @@ case "$ARCH" in
     x86_64)
         BINARY_ARCH="amd64"
         ;;
-    aarch64)
+    aarch64|arm64)
         BINARY_ARCH="arm64"
         ;;
     armv7l)
         BINARY_ARCH="arm"
         ;;
     *)
-        echo "Error: Unsupported architecture: $ARCH"
+        echo "::error::Unsupported architecture: $ARCH"
         exit 1
         ;;
 esac
@@ -115,9 +116,11 @@ echo "kubeconfig=$KUBECONFIG_PATH" >> "$GITHUB_OUTPUT"
 echo "KUBECONFIG exported: $KUBECONFIG_PATH"
 
 echo "✓ KubeSolo installed successfully"
+echo "::endgroup::"
 
-# Step 7: Wait for cluster ready (if requested)
+# Wait for cluster ready (if requested)
 if [ "$WAIT_FOR_READY" = "true" ]; then
+    echo "::group::Waiting for cluster ready"
     echo "Waiting for KubeSolo cluster to be ready (timeout: ${TIMEOUT}s)..."
     
     START_TIME=$(date +%s)
@@ -126,7 +129,7 @@ if [ "$WAIT_FOR_READY" = "true" ]; then
         ELAPSED=$(($(date +%s) - START_TIME))
         
         if [ "$ELAPSED" -gt "$TIMEOUT" ]; then
-            echo "Error: Timeout waiting for cluster to be ready"
+            echo "::error::Timeout waiting for cluster to be ready"
             echo "=== KubeSolo Service Status ==="
             sudo systemctl status kubesolo || true
             echo "=== KubeSolo Logs (last 100 lines) ==="
@@ -148,6 +151,7 @@ if [ "$WAIT_FOR_READY" = "true" ]; then
                         # Check if node is Ready
                         if kubectl --kubeconfig "$KUBECONFIG_PATH" get nodes --no-headers | grep -q " Ready "; then
                             echo "✓ KubeSolo cluster is fully ready!"
+                            echo "::endgroup::"
                             break
                         fi
                     fi
