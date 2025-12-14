@@ -4,6 +4,59 @@ set -e
 echo "::group::Installing KubeSolo"
 echo "Starting KubeSolo setup..."
 
+# Remove existing container runtimes (required by KubeSolo)
+echo "Removing existing container runtimes..."
+
+# Stop services
+sudo systemctl stop docker docker.socket containerd podman 2>/dev/null || true
+sudo systemctl disable docker docker.socket containerd podman 2>/dev/null || true
+
+# Kill any remaining processes
+sudo pkill -9 dockerd 2>/dev/null || true
+sudo pkill -9 containerd 2>/dev/null || true
+sudo pkill -9 podman 2>/dev/null || true
+
+# Rename binaries instead of uninstalling (much faster)
+for bin in docker dockerd containerd containerd-shim containerd-shim-runc-v2 runc podman; do
+  if [ -f "/usr/bin/$bin" ]; then
+    sudo mv "/usr/bin/$bin" "/usr/bin/${bin}.bak"
+  fi
+done
+
+# Remove data directories and sockets
+sudo rm -rf /var/lib/docker /var/lib/containerd
+sudo rm -f /var/run/docker.sock /var/run/containerd/containerd.sock
+
+# Remove docker0 network interface
+sudo ip link set docker0 down 2>/dev/null || true
+sudo ip link delete docker0 2>/dev/null || true
+
+# Clean up Docker iptables rules
+# Order matters: remove references first, then flush chains, then delete chains
+
+# 1. Remove jump rules from built-in chains
+sudo iptables -D FORWARD -j DOCKER-USER 2>/dev/null || true
+sudo iptables -D FORWARD -j DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
+sudo iptables -D FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+sudo iptables -D FORWARD -o docker0 -j DOCKER 2>/dev/null || true
+sudo iptables -D FORWARD -i docker0 ! -o docker0 -j ACCEPT 2>/dev/null || true
+sudo iptables -D FORWARD -i docker0 -o docker0 -j ACCEPT 2>/dev/null || true
+
+# 2. Remove NAT rules
+sudo iptables -t nat -D PREROUTING -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
+sudo iptables -t nat -D OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
+sudo iptables -t nat -D POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE 2>/dev/null || true
+
+# 3. Flush and delete Docker chains
+for chain in DOCKER DOCKER-ISOLATION-STAGE-1 DOCKER-ISOLATION-STAGE-2 DOCKER-USER; do
+  sudo iptables -F $chain 2>/dev/null || true
+  sudo iptables -X $chain 2>/dev/null || true
+done
+sudo iptables -t nat -F DOCKER 2>/dev/null || true
+sudo iptables -t nat -X DOCKER 2>/dev/null || true
+
+echo "✓ Container runtimes removed"
+
 # Get inputs from environment variables (set by GitHub Actions)
 VERSION="${INPUT_VERSION:-latest}"
 WAIT_FOR_READY="${INPUT_WAIT_FOR_READY:-true}"

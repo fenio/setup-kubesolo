@@ -15,78 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Remove container runtimes (required by KubeSolo)
-        run: |
-          # Stop services
-          sudo systemctl stop docker docker.socket containerd podman || true
-          sudo systemctl disable docker docker.socket containerd podman || true
-          
-          # Kill any remaining processes
-          sudo pkill -9 dockerd || true
-          sudo pkill -9 containerd || true
-          sudo pkill -9 podman || true
-          
-          # Rename binaries instead of uninstalling (much faster)
-          for bin in docker dockerd containerd containerd-shim containerd-shim-runc-v2 runc podman; do
-            if [ -f "/usr/bin/$bin" ]; then
-              sudo mv "/usr/bin/$bin" "/usr/bin/${bin}.bak"
-            fi
-          done
-          
-          # Remove data directories and sockets
-          sudo rm -rf /var/lib/docker /var/lib/containerd
-          sudo rm -f /var/run/docker.sock /var/run/containerd/containerd.sock
-          
-          # Remove docker0 network interface
-          sudo ip link set docker0 down 2>/dev/null || true
-          sudo ip link delete docker0 2>/dev/null || true
-          
-          # Clean up Docker iptables rules
-          # Order matters: remove references first, then flush chains, then delete chains
-          
-          # 1. Remove jump rules from built-in chains
-          sudo iptables -D FORWARD -j DOCKER-USER 2>/dev/null || true
-          sudo iptables -D FORWARD -j DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
-          sudo iptables -D FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-          sudo iptables -D FORWARD -o docker0 -j DOCKER 2>/dev/null || true
-          sudo iptables -D FORWARD -i docker0 ! -o docker0 -j ACCEPT 2>/dev/null || true
-          sudo iptables -D FORWARD -i docker0 -o docker0 -j ACCEPT 2>/dev/null || true
-          
-          # 2. Remove NAT rules
-          sudo iptables -t nat -D PREROUTING -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
-          sudo iptables -t nat -D OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
-          sudo iptables -t nat -D POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE 2>/dev/null || true
-          
-          # 3. Flush and delete Docker chains
-          for chain in DOCKER DOCKER-ISOLATION-STAGE-1 DOCKER-ISOLATION-STAGE-2 DOCKER-USER; do
-            sudo iptables -F $chain 2>/dev/null || true
-            sudo iptables -X $chain 2>/dev/null || true
-          done
-          sudo iptables -t nat -F DOCKER 2>/dev/null || true
-          sudo iptables -t nat -X DOCKER 2>/dev/null || true
-          
-          echo "✓ Container runtimes disabled"
-
       - name: Install KubeSolo
-        run: |
-          curl -sfL https://get.kubesolo.io | sudo sh -
-
-      - name: Wait for cluster ready
-        run: |
-          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
-          sudo chmod 644 $KUBECONFIG
-          
-          for i in $(seq 1 60); do
-            if kubectl get nodes --no-headers 2>/dev/null | grep -q " Ready "; then
-              echo "✓ Node is ready"
-              kubectl get nodes -o wide
-              exit 0
-            fi
-            echo "Waiting for node... ($i/60)"
-            sleep 2
-          done
-          echo "Timeout waiting for node"
-          exit 1
+        uses: ./
+        with:
+          wait-for-ready: 'true'
+          timeout: '120'
 
       - name: Test kubectl access
         run: |
