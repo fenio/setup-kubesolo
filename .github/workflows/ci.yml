@@ -54,37 +54,33 @@ jobs:
           sudo ip link set docker0 down || true
           sudo ip link delete docker0 || true
           
-          # Flush Docker's iptables rules
-          echo "Flushing Docker iptables rules..."
-          sudo iptables -t nat -F DOCKER || true
-          sudo iptables -t nat -X DOCKER || true
-          sudo iptables -t filter -F DOCKER || true
-          sudo iptables -t filter -X DOCKER || true
-          sudo iptables -t filter -F DOCKER-ISOLATION-STAGE-1 || true
-          sudo iptables -t filter -X DOCKER-ISOLATION-STAGE-1 || true
-          sudo iptables -t filter -F DOCKER-ISOLATION-STAGE-2 || true
-          sudo iptables -t filter -X DOCKER-ISOLATION-STAGE-2 || true
-          sudo iptables -t filter -F DOCKER-USER || true
-          sudo iptables -t filter -X DOCKER-USER || true
+          # Nuclear option: flush ALL iptables rules to ensure clean state
+          echo "Flushing ALL iptables rules..."
+          sudo iptables -F
+          sudo iptables -X
+          sudo iptables -t nat -F
+          sudo iptables -t nat -X
+          sudo iptables -t mangle -F
+          sudo iptables -t mangle -X
+          sudo iptables -t raw -F
+          sudo iptables -t raw -X
           
-          # Remove any DOCKER references from FORWARD chain
-          sudo iptables -D FORWARD -j DOCKER-USER 2>/dev/null || true
-          sudo iptables -D FORWARD -j DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
-          sudo iptables -D FORWARD -o docker0 -j DOCKER 2>/dev/null || true
+          # Reset default policies to ACCEPT
+          sudo iptables -P INPUT ACCEPT
+          sudo iptables -P FORWARD ACCEPT
+          sudo iptables -P OUTPUT ACCEPT
           
-          # Remove DOCKER chain reference from PREROUTING and OUTPUT in nat table
-          sudo iptables -t nat -D PREROUTING -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
-          sudo iptables -t nat -D OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
-          
-          echo "✓ Docker completely removed"
+          echo "✓ Docker completely removed and iptables flushed"
           
           # Verify cleanup
           echo ""
           echo "=== Verification ==="
           echo "--- Network interfaces (should not have docker0) ---"
           ip link show
-          echo "--- iptables nat (should not have DOCKER chains) ---"
-          sudo iptables -t nat -L -n 2>/dev/null | head -30 || true
+          echo "--- iptables (should be empty) ---"
+          sudo iptables -L -n -v
+          echo "--- iptables nat (should be empty) ---"
+          sudo iptables -t nat -L -n -v
 
       - name: Debug system state after cleanup
         run: |
@@ -94,6 +90,18 @@ jobs:
           echo ""
           echo "=== Running Processes after cleanup ==="
           ps aux
+
+      - name: Debug state before KubeSolo install
+        run: |
+          echo "=== State RIGHT BEFORE KubeSolo Install ==="
+          echo "--- Network interfaces ---"
+          ip addr
+          echo "--- IP routes ---"
+          ip route
+          echo "--- iptables filter ---"
+          sudo iptables -L -n -v
+          echo "--- iptables nat ---"
+          sudo iptables -t nat -L -n -v
 
       - name: Test official KubeSolo installer
         run: |
