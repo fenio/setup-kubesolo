@@ -41,6 +41,26 @@ jobs:
           wait-for-ready: 'true'
           timeout: '120'
 
+      - name: Debug iptables after KubeSolo installation
+        run: |
+          echo "=== iptables filter table ==="
+          sudo iptables -L -n -v
+          echo ""
+          echo "=== iptables nat table ==="
+          sudo iptables -t nat -L -n -v
+          echo ""
+          echo "=== iptables mangle table ==="
+          sudo iptables -t mangle -L -n -v
+          echo ""
+          echo "=== iptables raw table ==="
+          sudo iptables -t raw -L -n -v
+          echo ""
+          echo "=== Network interfaces ==="
+          ip link show
+          echo ""
+          echo "=== KubeSolo/container processes ==="
+          ps aux | grep -E 'kubesolo|containerd|flannel|cni' || echo "No relevant processes found"
+
       - name: Test kubectl access
         run: |
           export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
