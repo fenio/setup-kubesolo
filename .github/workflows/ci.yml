@@ -33,6 +33,10 @@ jobs:
             fi
           done
           
+          # Remove data directories and sockets
+          sudo rm -rf /var/lib/docker /var/lib/containerd
+          sudo rm -f /var/run/docker.sock /var/run/containerd/containerd.sock
+          
           # Remove docker0 network interface
           sudo ip link set docker0 down 2>/dev/null || true
           sudo ip link delete docker0 2>/dev/null || true
