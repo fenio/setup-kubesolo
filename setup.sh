@@ -31,29 +31,37 @@ sudo rm -f /var/run/docker.sock /var/run/containerd/containerd.sock
 sudo ip link set docker0 down 2>/dev/null || true
 sudo ip link delete docker0 2>/dev/null || true
 
-# Clean up Docker iptables rules
-# Order matters: remove references first, then flush chains, then delete chains
+# Remove ALL iptables rules and chains referencing Docker
+# This dynamically finds and removes everything Docker-related
+echo "Cleaning Docker iptables rules..."
 
-# 1. Remove jump rules from built-in chains
-sudo iptables -D FORWARD -j DOCKER-USER 2>/dev/null || true
-sudo iptables -D FORWARD -j DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
-sudo iptables -D FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-sudo iptables -D FORWARD -o docker0 -j DOCKER 2>/dev/null || true
-sudo iptables -D FORWARD -i docker0 ! -o docker0 -j ACCEPT 2>/dev/null || true
-sudo iptables -D FORWARD -i docker0 -o docker0 -j ACCEPT 2>/dev/null || true
+# Remove rules referencing docker0 or DOCKER from built-in chains (filter table)
+for chain in INPUT FORWARD OUTPUT; do
+  while sudo iptables -S $chain 2>/dev/null | grep -qi 'docker'; do
+    rule=$(sudo iptables -S $chain | grep -i 'docker' | head -1 | sed 's/^-A /-D /')
+    sudo iptables $rule 2>/dev/null || break
+  done
+done
 
-# 2. Remove NAT rules
-sudo iptables -t nat -D PREROUTING -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
-sudo iptables -t nat -D OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
-sudo iptables -t nat -D POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE 2>/dev/null || true
+# Remove rules referencing docker0 or DOCKER from built-in chains (nat table)
+for chain in PREROUTING INPUT OUTPUT POSTROUTING; do
+  while sudo iptables -t nat -S $chain 2>/dev/null | grep -qi 'docker'; do
+    rule=$(sudo iptables -t nat -S $chain | grep -i 'docker' | head -1 | sed 's/^-A /-D /')
+    sudo iptables -t nat $rule 2>/dev/null || break
+  done
+done
 
-# 3. Flush and delete Docker chains
-for chain in DOCKER DOCKER-ISOLATION-STAGE-1 DOCKER-ISOLATION-STAGE-2 DOCKER-USER; do
+# Flush and delete all Docker-related custom chains (filter table)
+for chain in $(sudo iptables -S 2>/dev/null | grep '^-N' | awk '{print $2}' | grep -i docker); do
   sudo iptables -F $chain 2>/dev/null || true
   sudo iptables -X $chain 2>/dev/null || true
 done
-sudo iptables -t nat -F DOCKER 2>/dev/null || true
-sudo iptables -t nat -X DOCKER 2>/dev/null || true
+
+# Flush and delete all Docker-related custom chains (nat table)
+for chain in $(sudo iptables -t nat -S 2>/dev/null | grep '^-N' | awk '{print $2}' | grep -i docker); do
+  sudo iptables -t nat -F $chain 2>/dev/null || true
+  sudo iptables -t nat -X $chain 2>/dev/null || true
+done
 
 echo "✓ Container runtimes removed"
 
