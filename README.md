@@ -25,7 +25,7 @@ jobs:
       
       - name: Setup KubeSolo
         id: kubesolo
-        uses: fenio/setup-kubesolo@v4
+        uses: fenio/setup-kubesolo@v5
       
       - name: Deploy and test
         env:
@@ -41,7 +41,8 @@ jobs:
 |-------|-------------|---------|
 | `version` | KubeSolo version to install (e.g., `v0.1.7-beta`) or `latest` | `latest` |
 | `wait-for-ready` | Wait for cluster to be ready before completing | `true` |
-| `timeout` | Timeout in seconds to wait for cluster readiness | `60` |
+| `timeout` | Timeout in seconds to wait for cluster readiness | `120` |
+| `dns-readiness` | Wait for CoreDNS to be ready and verify DNS resolution works | `true` |
 
 ## Outputs
 
