@@ -14,51 +14,33 @@ jobs:
     
     steps:
       - uses: actions/checkout@v6
-      
-      - name: Debug system state before cleanup
-        run: |
-          echo "=== Installed Packages ==="
-          dpkg -l
-          
-          echo ""
-          echo "=== Files in /var/run ==="
-          find /var/run -type f -o -type s 2>/dev/null || true
-          
-          echo ""
-          echo "=== Running Processes ==="
-          ps aux
 
-      - name: Remove Docker completely
+      - name: Remove container runtimes (required by KubeSolo)
         run: |
-          echo "=== Removing Docker completely (required by KubeSolo) ==="
+          # Stop services
+          sudo systemctl stop docker docker.socket containerd podman || true
+          sudo systemctl disable docker docker.socket containerd podman || true
           
-          # Stop all Docker services
-          sudo systemctl stop docker docker.socket containerd || true
-          sudo systemctl disable docker docker.socket containerd || true
-          
-          # Kill any remaining Docker processes
+          # Kill any remaining processes
           sudo pkill -9 dockerd || true
           sudo pkill -9 containerd || true
+          sudo pkill -9 podman || true
           
-          # Purge Docker packages
-          sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin moby-buildx moby-cli moby-compose moby-containerd moby-engine moby-runc || true
-          sudo apt-get autoremove -y || true
-          
-          # Remove Docker data directories
-          sudo rm -rf /var/lib/docker /var/lib/containerd
-          sudo rm -f /var/run/docker.sock /var/run/containerd/containerd.sock
-          sudo rm -rf /etc/docker
+          # Rename binaries instead of uninstalling (much faster)
+          for bin in docker dockerd containerd containerd-shim containerd-shim-runc-v2 runc podman; do
+            if [ -f "/usr/bin/$bin" ]; then
+              sudo mv "/usr/bin/$bin" "/usr/bin/${bin}.bak"
+            fi
+          done
           
           # Remove docker0 network interface
-          echo "Removing docker0 interface..."
           sudo ip link set docker0 down 2>/dev/null || true
           sudo ip link delete docker0 2>/dev/null || true
           
-          # Targeted cleanup of Docker iptables rules
+          # Clean up Docker iptables rules
           # Order matters: remove references first, then flush chains, then delete chains
-          echo "Cleaning Docker iptables rules..."
           
-          # 1. Remove jump rules from built-in chains that reference Docker chains
+          # 1. Remove jump rules from built-in chains
           sudo iptables -D FORWARD -j DOCKER-USER 2>/dev/null || true
           sudo iptables -D FORWARD -j DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
           sudo iptables -D FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
@@ -71,153 +53,77 @@ jobs:
           sudo iptables -t nat -D OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
           sudo iptables -t nat -D POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE 2>/dev/null || true
           
-          # 3. Flush Docker chains (now that references are removed)
-          sudo iptables -F DOCKER 2>/dev/null || true
-          sudo iptables -F DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
-          sudo iptables -F DOCKER-ISOLATION-STAGE-2 2>/dev/null || true
-          sudo iptables -F DOCKER-USER 2>/dev/null || true
+          # 3. Flush and delete Docker chains
+          for chain in DOCKER DOCKER-ISOLATION-STAGE-1 DOCKER-ISOLATION-STAGE-2 DOCKER-USER; do
+            sudo iptables -F $chain 2>/dev/null || true
+            sudo iptables -X $chain 2>/dev/null || true
+          done
           sudo iptables -t nat -F DOCKER 2>/dev/null || true
-          
-          # 4. Delete Docker chains
-          sudo iptables -X DOCKER 2>/dev/null || true
-          sudo iptables -X DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
-          sudo iptables -X DOCKER-ISOLATION-STAGE-2 2>/dev/null || true
-          sudo iptables -X DOCKER-USER 2>/dev/null || true
           sudo iptables -t nat -X DOCKER 2>/dev/null || true
           
-          echo "✓ Docker completely removed"
-          
-          # Verify cleanup
-          echo ""
-          echo "=== Verification ==="
-          echo "--- Network interfaces (should not have docker0) ---"
-          ip link show
-          echo "--- iptables filter (should not have DOCKER chains) ---"
-          sudo iptables -L -n -v
-          echo "--- iptables nat (should not have DOCKER chains or 172.17.0.0 rules) ---"
-          sudo iptables -t nat -L -n -v
+          echo "✓ Container runtimes disabled"
 
-      - name: Debug system state after cleanup
+      - name: Install KubeSolo
         run: |
-          echo "=== Files in /var/run after cleanup ==="
-          find /var/run -type f -o -type s 2>/dev/null || true
-          
-          echo ""
-          echo "=== Running Processes after cleanup ==="
-          ps aux
-
-      - name: Debug state before KubeSolo install
-        run: |
-          echo "=== State RIGHT BEFORE KubeSolo Install ==="
-          echo "--- Network interfaces ---"
-          ip addr
-          echo "--- IP routes ---"
-          ip route
-          echo "--- iptables filter ---"
-          sudo iptables -L -n -v
-          echo "--- iptables nat ---"
-          sudo iptables -t nat -L -n -v
-
-      - name: Test official KubeSolo installer
-        run: |
-          echo "=== Testing Official KubeSolo Installer ==="
           curl -sfL https://get.kubesolo.io | sudo sh -
 
       - name: Wait for cluster ready
         run: |
-          echo "=== Waiting for Cluster Ready ==="
           export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
           sudo chmod 644 $KUBECONFIG
           
           for i in $(seq 1 60); do
             if kubectl get nodes --no-headers 2>/dev/null | grep -q " Ready "; then
               echo "✓ Node is ready"
-              break
+              kubectl get nodes -o wide
+              exit 0
             fi
-            echo "Waiting for node to be ready... ($i/60)"
+            echo "Waiting for node... ($i/60)"
             sleep 2
           done
-          kubectl get nodes -o wide
+          echo "Timeout waiting for node"
+          exit 1
 
       - name: Test kubectl access
         run: |
-          echo "=== Testing Kubernetes Functionality ==="
           export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
-          kubectl version --client
           kubectl cluster-info
-          kubectl get nodes -o wide
           kubectl get pods -A
 
-      - name: Deploy test workload
+      - name: Deploy and test workload
         run: |
-          echo "=== Deploying Test Workload ==="
           export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
           
           kubectl create deployment nginx --image=nginx:alpine
           kubectl expose deployment nginx --port=80 --type=ClusterIP
           kubectl wait --for=condition=available --timeout=120s deployment/nginx
           
-          # Test connectivity
           POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
           kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
-          echo "✓ Workload is functioning correctly"
+          echo "✓ Workload test passed"
 
-      - name: Test internet connectivity from pod
+      - name: Test pod networking
         run: |
-          echo "=== Testing Internet Connectivity from Pod ==="
           export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
           
-          # Wait for CoreDNS to be fully ready (1/1 Running)
-          echo "Waiting for CoreDNS to be ready..."
-          for i in $(seq 1 60); do
-            POD_STATUS=$(kubectl get pods -n kube-system 2>/dev/null || true)
-            echo "$POD_STATUS"
-            if echo "$POD_STATUS" | grep -q "coredns.*1/1.*Running"; then
-              echo "✓ CoreDNS is fully ready"
-              sleep 5
+          # Wait for CoreDNS
+          for i in $(seq 1 30); do
+            if kubectl get pods -n kube-system 2>/dev/null | grep -q "coredns.*1/1.*Running"; then
+              echo "✓ CoreDNS ready"
               break
             fi
-            echo "Waiting for CoreDNS to be ready... ($i/60)"
             sleep 2
           done
-          kubectl get pods -A -o wide
-          
-          # Debug networking
-          echo ""
-          echo "=== Debug Network State ==="
-          echo "--- Services ---"
-          kubectl get svc -A
-          echo "--- Endpoints ---"
-          kubectl get endpoints -A
-          echo "--- CoreDNS logs ---"
-          kubectl logs -n kube-system -l k8s-app=kube-dns --tail=50 || kubectl logs -n kube-system $(kubectl get pods -n kube-system -o name | grep coredns) --tail=50 || true
-          echo "--- Network interfaces ---"
-          ip addr
-          echo "--- IP routes ---"
-          ip route
-          echo "--- iptables NAT ---"
-          sudo iptables -t nat -L -n -v
           
           kubectl run connectivity-test --image=busybox:stable --restart=Never -- sleep 300
           kubectl wait --for=condition=ready --timeout=60s pod/connectivity-test
           
-          echo "--- Test pod network ---"
-          kubectl exec connectivity-test -- ip addr || true
-          kubectl exec connectivity-test -- cat /etc/resolv.conf || true
+          # Test DNS
+          kubectl exec connectivity-test -- nslookup google.com
+          echo "✓ DNS working"
           
-          # Test DNS resolution with retries
-          echo "Testing DNS resolution..."
-          for i in $(seq 1 10); do
-            if kubectl exec connectivity-test -- nslookup google.com; then
-              echo "✓ DNS resolution working"
-              break
-            fi
-            echo "DNS not ready yet, retrying... ($i/10)"
-            sleep 2
-          done
-          
-          # Test external connectivity
+          # Test internet
           kubectl exec connectivity-test -- wget -q -O- --timeout=10 http://ifconfig.me && echo ""
-          echo "✓ Internet connectivity from pod is working"
+          echo "✓ Internet connectivity working"
           
           kubectl delete pod connectivity-test --ignore-not-found
