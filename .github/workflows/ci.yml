@@ -58,3 +58,19 @@ jobs:
           POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
           kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
           echo "✓ Workload is functioning correctly"
+      
+      - name: Test internet connectivity from pod
+        env:
+          KUBECONFIG: ${{ steps.kubesolo.outputs.kubeconfig }}
+        run: |
+          echo "=== Testing Internet Connectivity from Pod ==="
+          
+          kubectl run connectivity-test --image=busybox:stable --restart=Never -- sleep 300
+          kubectl wait --for=condition=ready --timeout=60s pod/connectivity-test
+          
+          # Test DNS resolution and external connectivity
+          kubectl exec connectivity-test -- nslookup google.com
+          kubectl exec connectivity-test -- wget -q -O- --timeout=10 http://ifconfig.me && echo ""
+          echo "✓ Internet connectivity from pod is working"
+          
+          kubectl delete pod connectivity-test --ignore-not-found
