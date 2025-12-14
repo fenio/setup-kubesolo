@@ -31,37 +31,20 @@ sudo rm -f /var/run/docker.sock /var/run/containerd/containerd.sock
 sudo ip link set docker0 down 2>/dev/null || true
 sudo ip link delete docker0 2>/dev/null || true
 
-# Remove ALL iptables rules and chains referencing Docker
-# This dynamically finds and removes everything Docker-related
-echo "Cleaning Docker iptables rules..."
-
-# Remove rules referencing docker0 or DOCKER from built-in chains (filter table)
-for chain in INPUT FORWARD OUTPUT; do
-  while sudo iptables -S $chain 2>/dev/null | grep -qi 'docker'; do
-    rule=$(sudo iptables -S $chain | grep -i 'docker' | head -1 | sed 's/^-A /-D /')
-    sudo iptables $rule 2>/dev/null || break
-  done
-done
-
-# Remove rules referencing docker0 or DOCKER from built-in chains (nat table)
-for chain in PREROUTING INPUT OUTPUT POSTROUTING; do
-  while sudo iptables -t nat -S $chain 2>/dev/null | grep -qi 'docker'; do
-    rule=$(sudo iptables -t nat -S $chain | grep -i 'docker' | head -1 | sed 's/^-A /-D /')
-    sudo iptables -t nat $rule 2>/dev/null || break
-  done
-done
-
-# Flush and delete all Docker-related custom chains (filter table)
-for chain in $(sudo iptables -S 2>/dev/null | grep '^-N' | awk '{print $2}' | grep -i docker); do
-  sudo iptables -F $chain 2>/dev/null || true
-  sudo iptables -X $chain 2>/dev/null || true
-done
-
-# Flush and delete all Docker-related custom chains (nat table)
-for chain in $(sudo iptables -t nat -S 2>/dev/null | grep '^-N' | awk '{print $2}' | grep -i docker); do
-  sudo iptables -t nat -F $chain 2>/dev/null || true
-  sudo iptables -t nat -X $chain 2>/dev/null || true
-done
+# Flush ALL iptables rules (nuclear option - required for clean KubeSolo networking)
+# This removes everything including Docker rules that interfere with KubeSolo's CNI
+echo "Flushing all iptables rules..."
+sudo iptables -F
+sudo iptables -X
+sudo iptables -t nat -F
+sudo iptables -t nat -X
+sudo iptables -t mangle -F
+sudo iptables -t mangle -X
+sudo iptables -t raw -F
+sudo iptables -t raw -X
+sudo iptables -P INPUT ACCEPT
+sudo iptables -P FORWARD ACCEPT
+sudo iptables -P OUTPUT ACCEPT
 
 echo "✓ Container runtimes removed"
 
