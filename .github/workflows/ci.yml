@@ -51,35 +51,50 @@ jobs:
           
           # Remove docker0 network interface
           echo "Removing docker0 interface..."
-          sudo ip link set docker0 down || true
-          sudo ip link delete docker0 || true
+          sudo ip link set docker0 down 2>/dev/null || true
+          sudo ip link delete docker0 2>/dev/null || true
           
-          # Nuclear option: flush ALL iptables rules to ensure clean state
-          echo "Flushing ALL iptables rules..."
-          sudo iptables -F
-          sudo iptables -X
-          sudo iptables -t nat -F
-          sudo iptables -t nat -X
-          sudo iptables -t mangle -F
-          sudo iptables -t mangle -X
-          sudo iptables -t raw -F
-          sudo iptables -t raw -X
+          # Targeted cleanup of Docker iptables rules
+          # Order matters: remove references first, then flush chains, then delete chains
+          echo "Cleaning Docker iptables rules..."
           
-          # Reset default policies to ACCEPT
-          sudo iptables -P INPUT ACCEPT
-          sudo iptables -P FORWARD ACCEPT
-          sudo iptables -P OUTPUT ACCEPT
+          # 1. Remove jump rules from built-in chains that reference Docker chains
+          sudo iptables -D FORWARD -j DOCKER-USER 2>/dev/null || true
+          sudo iptables -D FORWARD -j DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
+          sudo iptables -D FORWARD -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+          sudo iptables -D FORWARD -o docker0 -j DOCKER 2>/dev/null || true
+          sudo iptables -D FORWARD -i docker0 ! -o docker0 -j ACCEPT 2>/dev/null || true
+          sudo iptables -D FORWARD -i docker0 -o docker0 -j ACCEPT 2>/dev/null || true
           
-          echo "✓ Docker completely removed and iptables flushed"
+          # 2. Remove NAT rules
+          sudo iptables -t nat -D PREROUTING -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
+          sudo iptables -t nat -D OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
+          sudo iptables -t nat -D POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE 2>/dev/null || true
+          
+          # 3. Flush Docker chains (now that references are removed)
+          sudo iptables -F DOCKER 2>/dev/null || true
+          sudo iptables -F DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
+          sudo iptables -F DOCKER-ISOLATION-STAGE-2 2>/dev/null || true
+          sudo iptables -F DOCKER-USER 2>/dev/null || true
+          sudo iptables -t nat -F DOCKER 2>/dev/null || true
+          
+          # 4. Delete Docker chains
+          sudo iptables -X DOCKER 2>/dev/null || true
+          sudo iptables -X DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
+          sudo iptables -X DOCKER-ISOLATION-STAGE-2 2>/dev/null || true
+          sudo iptables -X DOCKER-USER 2>/dev/null || true
+          sudo iptables -t nat -X DOCKER 2>/dev/null || true
+          
+          echo "✓ Docker completely removed"
           
           # Verify cleanup
           echo ""
           echo "=== Verification ==="
           echo "--- Network interfaces (should not have docker0) ---"
           ip link show
-          echo "--- iptables (should be empty) ---"
+          echo "--- iptables filter (should not have DOCKER chains) ---"
           sudo iptables -L -n -v
-          echo "--- iptables nat (should be empty) ---"
+          echo "--- iptables nat (should not have DOCKER chains or 172.17.0.0 rules) ---"
           sudo iptables -t nat -L -n -v
 
       - name: Debug system state after cleanup
