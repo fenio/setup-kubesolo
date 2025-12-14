@@ -66,28 +66,16 @@ jobs:
           KUBECONFIG: ${{ steps.setup.outputs.kubeconfig }}
         run: |
           echo "=== Testing pod networking ==="
-          # Wait for CoreDNS to be ready
-          for i in $(seq 1 30); do
-            if kubectl get pods -n kube-system 2>/dev/null | grep -q "coredns.*1/1.*Running"; then
-              echo "✓ CoreDNS ready"
-              break
-            fi
-            sleep 2
-          done
-
+          
+          # Wait for CoreDNS to be ready before testing DNS resolution
+          echo "Waiting for CoreDNS to be ready..."
+          kubectl wait --for=condition=ready --timeout=120s pod -l k8s-app=kube-dns -n kube-system
+          echo "✓ CoreDNS is ready"
+          
           kubectl run connectivity-test --image=busybox:stable --restart=Never -- sleep 300
           kubectl wait --for=condition=ready --timeout=60s pod/connectivity-test
 
-          # Test DNS with retries
-          for i in $(seq 1 10); do
-            if kubectl exec connectivity-test -- nslookup google.com; then
-              echo "✓ DNS working"
-              break
-            fi
-            echo "DNS not ready yet, retrying... ($i/10)"
-            sleep 2
-          done
-
+          kubectl exec connectivity-test -- nslookup google.com
           kubectl exec connectivity-test -- wget -q -O- --timeout=10 http://ifconfig.me && echo ""
           echo "✓ Pod networking is working"
 
