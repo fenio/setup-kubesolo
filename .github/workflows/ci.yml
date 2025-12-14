@@ -108,10 +108,30 @@ jobs:
             echo "Waiting for CoreDNS to be ready... ($i/60)"
             sleep 2
           done
-          kubectl get pods -A
+          kubectl get pods -A -o wide
+          
+          # Debug networking
+          echo ""
+          echo "=== Debug Network State ==="
+          echo "--- Services ---"
+          kubectl get svc -A
+          echo "--- Endpoints ---"
+          kubectl get endpoints -A
+          echo "--- CoreDNS logs ---"
+          kubectl logs -n kube-system -l k8s-app=kube-dns --tail=50 || kubectl logs -n kube-system $(kubectl get pods -n kube-system -o name | grep coredns) --tail=50 || true
+          echo "--- Network interfaces ---"
+          ip addr
+          echo "--- IP routes ---"
+          ip route
+          echo "--- iptables NAT ---"
+          sudo iptables -t nat -L -n -v
           
           kubectl run connectivity-test --image=busybox:stable --restart=Never -- sleep 300
           kubectl wait --for=condition=ready --timeout=60s pod/connectivity-test
+          
+          echo "--- Test pod network ---"
+          kubectl exec connectivity-test -- ip addr || true
+          kubectl exec connectivity-test -- cat /etc/resolv.conf || true
           
           # Test DNS resolution with retries
           echo "Testing DNS resolution..."
