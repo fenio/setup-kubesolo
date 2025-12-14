@@ -122,9 +122,15 @@ jobs:
           kubectl run connectivity-test --image=busybox:stable --restart=Never -- sleep 300
           kubectl wait --for=condition=ready --timeout=60s pod/connectivity-test
           
-          # Test DNS
-          kubectl exec connectivity-test -- nslookup google.com
-          echo "✓ DNS working"
+          # Test DNS with retries
+          for i in $(seq 1 10); do
+            if kubectl exec connectivity-test -- nslookup google.com; then
+              echo "✓ DNS working"
+              break
+            fi
+            echo "DNS not ready yet, retrying... ($i/10)"
+            sleep 2
+          done
           
           # Test internet
           kubectl exec connectivity-test -- wget -q -O- --timeout=10 http://ifconfig.me && echo ""
