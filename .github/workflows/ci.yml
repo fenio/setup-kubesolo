@@ -15,6 +15,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       
+      - name: Debug system state before cleanup
+        run: |
+          echo "=== Installed Packages ==="
+          dpkg -l | grep -E "docker|containerd|podman|moby" || echo "No docker/containerd/podman packages found"
+          
+          echo ""
+          echo "=== Sockets in /var/run ==="
+          ls -la /var/run/*.sock 2>/dev/null || echo "No sockets found in /var/run"
+          ls -la /var/run/**/*.sock 2>/dev/null || echo "No sockets found in /var/run subdirs"
+          
+          echo ""
+          echo "=== Running Processes ==="
+          ps aux
+          
+          echo ""
+          echo "=== Systemd Services (docker/containerd) ==="
+          systemctl list-units --type=service | grep -E "docker|containerd" || echo "No docker/containerd services"
+
       - name: Remove Docker
         run: |
           echo "=== Removing Docker (required by KubeSolo) ==="
@@ -23,6 +41,19 @@ jobs:
           sudo rm -rf /var/lib/docker /var/lib/containerd
           sudo rm -f /var/run/docker.sock
           echo "✓ Docker removed"
+
+      - name: Debug system state after cleanup
+        run: |
+          echo "=== Sockets in /var/run after cleanup ==="
+          ls -la /var/run/*.sock 2>/dev/null || echo "No sockets found in /var/run"
+          
+          echo ""
+          echo "=== Running Processes after cleanup ==="
+          ps aux | grep -E "docker|containerd" || echo "No docker/containerd processes"
+          
+          echo ""
+          echo "=== Systemd Services after cleanup ==="
+          systemctl list-units --type=service | grep -E "docker|containerd" || echo "No docker/containerd services"
 
       - name: Test official KubeSolo installer
         run: |
