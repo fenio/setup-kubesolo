@@ -18,6 +18,37 @@ jobs:
       - name: Check initial state
         run: |
           echo "=== Checking Initial System State ==="
+          
+          # Check no container engines are installed/running (required by KubeSolo)
+          echo "Checking for container engines..."
+          FOUND_ENGINES=""
+          
+          if systemctl is-active --quiet docker 2>/dev/null; then
+            FOUND_ENGINES="${FOUND_ENGINES} docker(running)"
+          elif which docker &>/dev/null; then
+            FOUND_ENGINES="${FOUND_ENGINES} docker(installed)"
+          fi
+          
+          if systemctl is-active --quiet podman 2>/dev/null; then
+            FOUND_ENGINES="${FOUND_ENGINES} podman(running)"
+          elif which podman &>/dev/null; then
+            FOUND_ENGINES="${FOUND_ENGINES} podman(installed)"
+          fi
+          
+          if systemctl is-active --quiet containerd 2>/dev/null; then
+            FOUND_ENGINES="${FOUND_ENGINES} containerd(running)"
+          elif which containerd &>/dev/null; then
+            FOUND_ENGINES="${FOUND_ENGINES} containerd(installed)"
+          fi
+          
+          if [ -n "$FOUND_ENGINES" ]; then
+            echo "✗ Found container engines that may interfere with KubeSolo:$FOUND_ENGINES"
+            echo "KubeSolo requires no container engines to be installed or active"
+            exit 1
+          fi
+          echo "✓ No conflicting container engines found"
+          
+          # Check kubesolo not already installed
           ! which kubesolo && echo "✓ kubesolo not installed initially" || (echo "✗ kubesolo already installed" && exit 1)
           
       - name: Setup KubeSolo
