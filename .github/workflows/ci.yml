@@ -28,3 +28,82 @@ jobs:
         run: |
           echo "=== Testing Official KubeSolo Installer ==="
           curl -sfL https://get.kubesolo.io | sudo sh -
+
+      - name: Wait for cluster ready
+        run: |
+          echo "=== Waiting for Cluster Ready ==="
+          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
+          sudo chmod 644 $KUBECONFIG
+          
+          for i in $(seq 1 60); do
+            if kubectl get nodes --no-headers 2>/dev/null | grep -q " Ready "; then
+              echo "✓ Node is ready"
+              break
+            fi
+            echo "Waiting for node to be ready... ($i/60)"
+            sleep 2
+          done
+          kubectl get nodes -o wide
+
+      - name: Test kubectl access
+        run: |
+          echo "=== Testing Kubernetes Functionality ==="
+          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
+          kubectl version --client
+          kubectl cluster-info
+          kubectl get nodes -o wide
+          kubectl get pods -A
+
+      - name: Deploy test workload
+        run: |
+          echo "=== Deploying Test Workload ==="
+          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
+          
+          kubectl create deployment nginx --image=nginx:alpine
+          kubectl expose deployment nginx --port=80 --type=ClusterIP
+          kubectl wait --for=condition=available --timeout=120s deployment/nginx
+          
+          # Test connectivity
+          POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
+          kubectl exec $POD_NAME -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
+          echo "✓ Workload is functioning correctly"
+
+      - name: Test internet connectivity from pod
+        run: |
+          echo "=== Testing Internet Connectivity from Pod ==="
+          export KUBECONFIG=/var/lib/kubesolo/pki/admin/admin.kubeconfig
+          
+          # Wait for CoreDNS to be fully ready (1/1 Running)
+          echo "Waiting for CoreDNS to be ready..."
+          for i in $(seq 1 60); do
+            POD_STATUS=$(kubectl get pods -n kube-system 2>/dev/null || true)
+            echo "$POD_STATUS"
+            if echo "$POD_STATUS" | grep -q "coredns.*1/1.*Running"; then
+              echo "✓ CoreDNS is fully ready"
+              sleep 5
+              break
+            fi
+            echo "Waiting for CoreDNS to be ready... ($i/60)"
+            sleep 2
+          done
+          kubectl get pods -A
+          
+          kubectl run connectivity-test --image=busybox:stable --restart=Never -- sleep 300
+          kubectl wait --for=condition=ready --timeout=60s pod/connectivity-test
+          
+          # Test DNS resolution with retries
+          echo "Testing DNS resolution..."
+          for i in $(seq 1 10); do
+            if kubectl exec connectivity-test -- nslookup google.com; then
+              echo "✓ DNS resolution working"
+              break
+            fi
+            echo "DNS not ready yet, retrying... ($i/10)"
+            sleep 2
+          done
+          
+          # Test external connectivity
+          kubectl exec connectivity-test -- wget -q -O- --timeout=10 http://ifconfig.me && echo ""
+          echo "✓ Internet connectivity from pod is working"
+          
+          kubectl delete pod connectivity-test --ignore-not-found
