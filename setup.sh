@@ -52,8 +52,9 @@ echo "✓ Container runtimes removed"
 VERSION="${INPUT_VERSION:-latest}"
 WAIT_FOR_READY="${INPUT_WAIT_FOR_READY:-true}"
 TIMEOUT="${INPUT_TIMEOUT:-60}"
+DNS_READINESS="${INPUT_DNS_READINESS:-true}"
 
-echo "Configuration: version=$VERSION, wait-for-ready=$WAIT_FOR_READY, timeout=${TIMEOUT}s"
+echo "Configuration: version=$VERSION, wait-for-ready=$WAIT_FOR_READY, timeout=${TIMEOUT}s, dns-readiness=$DNS_READINESS"
 
 # Resolve version if 'latest'
 if [ "$VERSION" = "latest" ]; then
@@ -206,6 +207,33 @@ if [ "$WAIT_FOR_READY" = "true" ]; then
         echo "Cluster not ready yet, waiting... (${ELAPSED}/${TIMEOUT}s)"
         sleep 5
     done
+fi
+
+# DNS readiness check (if requested)
+if [ "$DNS_READINESS" = "true" ]; then
+  echo "::group::Testing DNS readiness"
+  echo "Verifying CoreDNS and DNS resolution..."
+  
+  # Wait for CoreDNS pods to be ready
+  echo "Waiting for CoreDNS to be ready..."
+  kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=120s pod -l k8s-app=kube-dns -n kube-system
+  echo "✓ CoreDNS is ready"
+  
+  # Create a test pod and verify DNS resolution
+  kubectl --kubeconfig "$KUBECONFIG_PATH" run dns-test --image=busybox:stable --restart=Never -- sleep 300
+  kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=60s pod/dns-test
+  
+  if kubectl --kubeconfig "$KUBECONFIG_PATH" exec dns-test -- nslookup kubernetes.default.svc.cluster.local; then
+    echo "✓ DNS resolution is working"
+  else
+    echo "::error::DNS resolution failed"
+    kubectl --kubeconfig "$KUBECONFIG_PATH" delete pod dns-test --ignore-not-found
+    exit 1
+  fi
+  
+  # Cleanup test pod
+  kubectl --kubeconfig "$KUBECONFIG_PATH" delete pod dns-test --ignore-not-found
+  echo "::endgroup::"
 fi
 
 echo "✓ KubeSolo setup completed successfully!"

@@ -21,6 +21,11 @@ inputs:
     description: 'Timeout in seconds to wait for cluster readiness'
     required: false
     default: '120'
+  
+  dns-readiness:
+    description: 'Wait for CoreDNS to be ready and verify DNS resolution works'
+    required: false
+    default: 'true'
 
 outputs:
   kubeconfig:
@@ -37,5 +42,6 @@ runs:
         INPUT_VERSION: ${{ inputs.version }}
         INPUT_WAIT_FOR_READY: ${{ inputs.wait-for-ready }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_DNS_READINESS: ${{ inputs.dns-readiness }}
       run: ${{ github.action_path }}/setup.sh
 
