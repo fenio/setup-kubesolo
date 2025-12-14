@@ -15,6 +15,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Debug iptables before cleanup
+        run: |
+          echo "=== iptables filter table ==="
+          sudo iptables -L -n -v
+          echo ""
+          echo "=== iptables nat table ==="
+          sudo iptables -t nat -L -n -v
+          echo ""
+          echo "=== iptables mangle table ==="
+          sudo iptables -t mangle -L -n -v
+          echo ""
+          echo "=== iptables raw table ==="
+          sudo iptables -t raw -L -n -v
+          echo ""
+          echo "=== Network interfaces ==="
+          ip link show
+          echo ""
+          echo "=== Docker/container processes ==="
+          ps aux | grep -E 'docker|containerd|podman' || echo "No container processes found"
+
       - name: Install KubeSolo
         uses: ./
         with:
