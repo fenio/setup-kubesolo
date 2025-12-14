@@ -215,17 +215,39 @@ if [ "$DNS_READINESS" = "true" ]; then
   echo "Verifying CoreDNS and DNS resolution..."
   
   # Wait for CoreDNS pods to be ready
+  # KubeSolo uses different labeling, so we check by pod name pattern
   echo "Waiting for CoreDNS to be ready..."
-  kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=120s pod -l k8s-app=kube-dns -n kube-system
-  echo "✓ CoreDNS is ready"
+  for i in $(seq 1 60); do
+    if kubectl --kubeconfig "$KUBECONFIG_PATH" get pods -n kube-system 2>/dev/null | grep -q "coredns.*1/1.*Running"; then
+      echo "✓ CoreDNS is ready"
+      break
+    fi
+    if [ "$i" -eq 60 ]; then
+      echo "::error::Timeout waiting for CoreDNS"
+      kubectl --kubeconfig "$KUBECONFIG_PATH" get pods -n kube-system || true
+      exit 1
+    fi
+    echo "Waiting for CoreDNS... ($i/60)"
+    sleep 2
+  done
   
   # Create a test pod and verify DNS resolution
   kubectl --kubeconfig "$KUBECONFIG_PATH" run dns-test --image=busybox:stable --restart=Never -- sleep 300
   kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=60s pod/dns-test
   
-  if kubectl --kubeconfig "$KUBECONFIG_PATH" exec dns-test -- nslookup kubernetes.default.svc.cluster.local; then
-    echo "✓ DNS resolution is working"
-  else
+  # Test DNS with retries (CoreDNS may need a moment to be fully functional)
+  DNS_OK=false
+  for i in $(seq 1 10); do
+    if kubectl --kubeconfig "$KUBECONFIG_PATH" exec dns-test -- nslookup kubernetes.default.svc.cluster.local; then
+      echo "✓ DNS resolution is working"
+      DNS_OK=true
+      break
+    fi
+    echo "DNS not ready yet, retrying... ($i/10)"
+    sleep 2
+  done
+  
+  if [ "$DNS_OK" = "false" ]; then
     echo "::error::DNS resolution failed"
     kubectl --kubeconfig "$KUBECONFIG_PATH" delete pod dns-test --ignore-not-found
     exit 1
