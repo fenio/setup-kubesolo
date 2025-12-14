@@ -24,7 +24,7 @@ else
     ACTUAL_VERSION="$VERSION"
 fi
 
-# Step 2: Detect architecture
+# Detect architecture
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)
@@ -44,7 +44,7 @@ esac
 
 echo "Architecture: $ARCH -> $BINARY_ARCH"
 
-# Step 3: Download and install KubeSolo
+# Download and install KubeSolo
 DOWNLOAD_URL="https://github.com/portainer/kubesolo/releases/download/${ACTUAL_VERSION}/kubesolo-${ACTUAL_VERSION}-linux-${BINARY_ARCH}.tar.gz"
 echo "Downloading from: $DOWNLOAD_URL"
 
@@ -66,7 +66,7 @@ if [ -d "/opt/cni/bin" ]; then
     sudo rm -rf /opt/cni/bin
 fi
 
-# Step 4: Create systemd service
+# Create systemd service
 echo "Creating systemd service..."
 cat << 'EOF' | sudo tee /etc/systemd/system/kubesolo.service > /dev/null
 [Unit]
@@ -91,7 +91,7 @@ TasksMax=infinity
 WantedBy=multi-user.target
 EOF
 
-# Step 5: Start KubeSolo service
+# Start KubeSolo service
 echo "Starting KubeSolo service..."
 sudo systemctl daemon-reload
 sudo systemctl enable kubesolo
@@ -100,7 +100,7 @@ sudo systemctl start kubesolo
 # Clean up
 rm -f /tmp/kubesolo.tar.gz
 
-# Step 6: Wait for kubeconfig to be generated
+# Wait for kubeconfig to be generated
 echo "Waiting for kubeconfig generation..."
 sleep 5
 
