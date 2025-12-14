@@ -28,14 +28,63 @@ jobs:
           echo "=== Running Processes ==="
           ps aux
 
-      - name: Remove Docker
+      - name: Remove Docker completely
         run: |
-          echo "=== Removing Docker (required by KubeSolo) ==="
+          echo "=== Removing Docker completely (required by KubeSolo) ==="
+          
+          # Stop all Docker services
           sudo systemctl stop docker docker.socket containerd || true
-          sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || true
+          sudo systemctl disable docker docker.socket containerd || true
+          
+          # Kill any remaining Docker processes
+          sudo pkill -9 dockerd || true
+          sudo pkill -9 containerd || true
+          
+          # Purge Docker packages
+          sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin moby-buildx moby-cli moby-compose moby-containerd moby-engine moby-runc || true
+          sudo apt-get autoremove -y || true
+          
+          # Remove Docker data directories
           sudo rm -rf /var/lib/docker /var/lib/containerd
-          sudo rm -f /var/run/docker.sock
-          echo "✓ Docker removed"
+          sudo rm -f /var/run/docker.sock /var/run/containerd/containerd.sock
+          sudo rm -rf /etc/docker
+          
+          # Remove docker0 network interface
+          echo "Removing docker0 interface..."
+          sudo ip link set docker0 down || true
+          sudo ip link delete docker0 || true
+          
+          # Flush Docker's iptables rules
+          echo "Flushing Docker iptables rules..."
+          sudo iptables -t nat -F DOCKER || true
+          sudo iptables -t nat -X DOCKER || true
+          sudo iptables -t filter -F DOCKER || true
+          sudo iptables -t filter -X DOCKER || true
+          sudo iptables -t filter -F DOCKER-ISOLATION-STAGE-1 || true
+          sudo iptables -t filter -X DOCKER-ISOLATION-STAGE-1 || true
+          sudo iptables -t filter -F DOCKER-ISOLATION-STAGE-2 || true
+          sudo iptables -t filter -X DOCKER-ISOLATION-STAGE-2 || true
+          sudo iptables -t filter -F DOCKER-USER || true
+          sudo iptables -t filter -X DOCKER-USER || true
+          
+          # Remove any DOCKER references from FORWARD chain
+          sudo iptables -D FORWARD -j DOCKER-USER 2>/dev/null || true
+          sudo iptables -D FORWARD -j DOCKER-ISOLATION-STAGE-1 2>/dev/null || true
+          sudo iptables -D FORWARD -o docker0 -j DOCKER 2>/dev/null || true
+          
+          # Remove DOCKER chain reference from PREROUTING and OUTPUT in nat table
+          sudo iptables -t nat -D PREROUTING -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
+          sudo iptables -t nat -D OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -j DOCKER 2>/dev/null || true
+          
+          echo "✓ Docker completely removed"
+          
+          # Verify cleanup
+          echo ""
+          echo "=== Verification ==="
+          echo "--- Network interfaces (should not have docker0) ---"
+          ip link show
+          echo "--- iptables nat (should not have DOCKER chains) ---"
+          sudo iptables -t nat -L -n 2>/dev/null | head -30 || true
 
       - name: Debug system state after cleanup
         run: |
