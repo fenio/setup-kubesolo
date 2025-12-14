@@ -15,6 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       
+      - name: Remove Docker
+        run: |
+          echo "=== Removing Docker (required by KubeSolo) ==="
+          sudo systemctl stop docker docker.socket containerd || true
+          sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || true
+          sudo rm -rf /var/lib/docker /var/lib/containerd
+          echo "✓ Docker removed"
+
       - name: Test official KubeSolo installer
         run: |
           echo "=== Testing Official KubeSolo Installer ==="
