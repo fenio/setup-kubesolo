@@ -15,38 +15,51 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       
+      - name: Remove conflicting container engines
+        run: |
+          echo "=== Removing Conflicting Container Engines ==="
+          echo "KubeSolo requires no container engines to be installed or active"
+          
+          # Stop and disable Docker
+          if systemctl is-active --quiet docker 2>/dev/null; then
+            echo "Stopping Docker..."
+            sudo systemctl stop docker docker.socket
+            sudo systemctl disable docker docker.socket
+          fi
+          
+          # Stop and disable containerd
+          if systemctl is-active --quiet containerd 2>/dev/null; then
+            echo "Stopping containerd..."
+            sudo systemctl stop containerd
+            sudo systemctl disable containerd
+          fi
+          
+          # Stop and disable Podman if present
+          if systemctl is-active --quiet podman 2>/dev/null; then
+            echo "Stopping Podman..."
+            sudo systemctl stop podman podman.socket
+            sudo systemctl disable podman podman.socket
+          fi
+          
+          echo "✓ Container engines stopped"
+
       - name: Check initial state
         run: |
           echo "=== Checking Initial System State ==="
           
-          # Check no container engines are installed/running (required by KubeSolo)
-          echo "Checking for container engines..."
-          FOUND_ENGINES=""
+          # Verify no container engines are running
+          echo "Verifying no container engines are running..."
+          RUNNING_ENGINES=""
           
-          if systemctl is-active --quiet docker 2>/dev/null; then
-            FOUND_ENGINES="${FOUND_ENGINES} docker(running)"
-          elif which docker &>/dev/null; then
-            FOUND_ENGINES="${FOUND_ENGINES} docker(installed)"
-          fi
+          systemctl is-active --quiet docker 2>/dev/null && RUNNING_ENGINES="${RUNNING_ENGINES} docker"
+          systemctl is-active --quiet containerd 2>/dev/null && RUNNING_ENGINES="${RUNNING_ENGINES} containerd"
+          systemctl is-active --quiet podman 2>/dev/null && RUNNING_ENGINES="${RUNNING_ENGINES} podman"
           
-          if systemctl is-active --quiet podman 2>/dev/null; then
-            FOUND_ENGINES="${FOUND_ENGINES} podman(running)"
-          elif which podman &>/dev/null; then
-            FOUND_ENGINES="${FOUND_ENGINES} podman(installed)"
-          fi
-          
-          if systemctl is-active --quiet containerd 2>/dev/null; then
-            FOUND_ENGINES="${FOUND_ENGINES} containerd(running)"
-          elif which containerd &>/dev/null; then
-            FOUND_ENGINES="${FOUND_ENGINES} containerd(installed)"
-          fi
-          
-          if [ -n "$FOUND_ENGINES" ]; then
-            echo "✗ Found container engines that may interfere with KubeSolo:$FOUND_ENGINES"
-            echo "KubeSolo requires no container engines to be installed or active"
+          if [ -n "$RUNNING_ENGINES" ]; then
+            echo "✗ Container engines still running:$RUNNING_ENGINES"
             exit 1
           fi
-          echo "✓ No conflicting container engines found"
+          echo "✓ No conflicting container engines running"
           
           # Check kubesolo not already installed
           ! which kubesolo && echo "✓ kubesolo not installed initially" || (echo "✗ kubesolo already installed" && exit 1)
