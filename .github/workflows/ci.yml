@@ -10,7 +10,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    name: Test KubeSolo
+    name: Test
 
     steps:
       - name: Checkout
@@ -20,12 +20,12 @@ jobs:
         run: |
           echo "=== Checking initial system state ==="
           if command -v kubesolo &> /dev/null; then
-            echo "✗ kubesolo already installed"
+            echo "ERROR: kubesolo already installed"
             exit 1
           fi
-          echo "✓ kubesolo not installed"
+          echo "OK: kubesolo not installed"
 
-      - name: Setup KubeSolo
+      - name: Setup cluster
         id: setup
         uses: ./
         with:
@@ -35,8 +35,8 @@ jobs:
       - name: Verify installation
         run: |
           echo "=== Verifying installation ==="
-          command -v kubesolo && echo "✓ kubesolo binary found" || { echo "✗ kubesolo binary not found"; exit 1; }
-          systemctl is-active kubesolo && echo "✓ kubesolo service is active" || { echo "✗ kubesolo service not active"; exit 1; }
+          command -v kubesolo && echo "OK: kubesolo binary found" || { echo "ERROR: kubesolo binary not found"; exit 1; }
+          systemctl is-active kubesolo && echo "OK: kubesolo service is active" || { echo "ERROR: kubesolo service not active"; exit 1; }
 
       - name: Test kubectl access
         env:
@@ -59,4 +59,4 @@ jobs:
 
           POD_NAME=$(kubectl get pod -l app=nginx -o jsonpath='{.items[0].metadata.name}')
           kubectl exec "$POD_NAME" -- wget -O- http://localhost:80 | grep -q "Welcome to nginx"
-          echo "✓ Workload is functioning correctly"
+          echo "OK: Test workload is functioning correctly"
