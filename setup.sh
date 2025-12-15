@@ -232,7 +232,7 @@ if [ "$DNS_READINESS" = "true" ]; then
   done
   
   # Create a test pod and verify DNS resolution
-  kubectl --kubeconfig "$KUBECONFIG_PATH" run dns-test --image=busybox:stable --restart=Never -- sleep 300
+  kubectl --kubeconfig "$KUBECONFIG_PATH" run dns-test --image=public.ecr.aws/docker/library/busybox:stable --restart=Never -- sleep 300
   kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=60s pod/dns-test
   
   # Test DNS with retries (CoreDNS may need a moment to be fully functional)
