@@ -5,7 +5,6 @@ A GitHub Action for installing and configuring [KubeSolo](https://github.com/por
 ## Features
 
 - ✅ Automatic installation of KubeSolo
-- ✅ Simple bash script implementation - no hidden complexity
 - ✅ Waits for cluster readiness (checks systemd service and API server port)
 - ✅ Outputs kubeconfig path for easy integration
 - ✅ No cleanup required - designed for ephemeral GitHub Actions runners
@@ -71,7 +70,7 @@ If the cluster doesn't become ready in time, increase the timeout:
 
 ```yaml
 - name: Setup KubeSolo
-  uses: fenio/setup-kubesolo@v4
+  uses: fenio/setup-kubesolo@v5
   with:
     timeout: '600'  # 10 minutes
 ```
