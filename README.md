@@ -100,3 +100,11 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 - [KubeSolo](https://github.com/portainer/kubesolo) - Ultra-lightweight Kubernetes
 - [Portainer](https://www.portainer.io/) - Container management platform
+
+### Other Kubernetes Setup Actions
+
+- [setup-k0s](https://github.com/fenio/setup-k0s) - Zero friction Kubernetes (k0s)
+- [setup-k3s](https://github.com/fenio/setup-k3s) - Lightweight Kubernetes (k3s)
+- [setup-microk8s](https://github.com/fenio/setup-microk8s) - Lightweight Kubernetes by Canonical
+- [setup-minikube](https://github.com/fenio/setup-minikube) - Local Kubernetes (Minikube)
+- [setup-talos](https://github.com/fenio/setup-talos) - Secure, immutable Kubernetes OS (Talos)
