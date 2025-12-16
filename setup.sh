@@ -53,8 +53,9 @@ VERSION="${INPUT_VERSION:-latest}"
 WAIT_FOR_READY="${INPUT_WAIT_FOR_READY:-true}"
 TIMEOUT="${INPUT_TIMEOUT:-60}"
 DNS_READINESS="${INPUT_DNS_READINESS:-true}"
+LOCAL_STORAGE_SHARED_PATH="${INPUT_LOCAL_STORAGE_SHARED_PATH:-}"
 
-echo "Configuration: version=$VERSION, wait-for-ready=$WAIT_FOR_READY, timeout=${TIMEOUT}s, dns-readiness=$DNS_READINESS"
+echo "Configuration: version=$VERSION, wait-for-ready=$WAIT_FOR_READY, timeout=${TIMEOUT}s, dns-readiness=$DNS_READINESS, local-storage-shared-path=$LOCAL_STORAGE_SHARED_PATH"
 
 # Resolve version if 'latest'
 if [ "$VERSION" = "latest" ]; then
@@ -113,7 +114,14 @@ fi
 
 # Create systemd service
 echo "Creating systemd service..."
-cat << 'EOF' | sudo tee /etc/systemd/system/kubesolo.service > /dev/null
+
+# Build ExecStart command with optional flags
+KUBESOLO_CMD="/usr/local/bin/kubesolo --path=/var/lib/kubesolo"
+if [ -n "$LOCAL_STORAGE_SHARED_PATH" ]; then
+    KUBESOLO_CMD="$KUBESOLO_CMD --local-storage-shared-path=$LOCAL_STORAGE_SHARED_PATH"
+fi
+
+cat << EOF | sudo tee /etc/systemd/system/kubesolo.service > /dev/null
 [Unit]
 Description=KubeSolo - Lightweight Kubernetes
 Documentation=https://github.com/portainer/kubesolo
@@ -124,7 +132,7 @@ Wants=network-online.target
 Type=notify
 Restart=on-failure
 RestartSec=5s
-ExecStart=/usr/local/bin/kubesolo --path=/var/lib/kubesolo
+ExecStart=$KUBESOLO_CMD
 KillMode=process
 Delegate=yes
 LimitNOFILE=1048576

@@ -26,6 +26,11 @@ inputs:
     description: 'Wait for CoreDNS to be ready and verify DNS resolution works'
     required: false
     default: 'true'
+  
+  local-storage-shared-path:
+    description: 'Path for shared local storage (enables ReadWriteMany PVCs). If set, configures local-path-provisioner with sharedFileSystemPath.'
+    required: false
+    default: ''
 
 outputs:
   kubeconfig:
@@ -43,5 +48,6 @@ runs:
         INPUT_WAIT_FOR_READY: ${{ inputs.wait-for-ready }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}
         INPUT_DNS_READINESS: ${{ inputs.dns-readiness }}
+        INPUT_LOCAL_STORAGE_SHARED_PATH: ${{ inputs.local-storage-shared-path }}
       run: ${{ github.action_path }}/setup.sh
 
