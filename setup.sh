@@ -241,7 +241,16 @@ if [ "$DNS_READINESS" = "true" ]; then
   
   # Create a test pod and verify DNS resolution
   kubectl --kubeconfig "$KUBECONFIG_PATH" run dns-test --image=public.ecr.aws/docker/library/busybox:stable --restart=Never -- sleep 300
-  kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=60s pod/dns-test
+  if ! kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=120s pod/dns-test; then
+    echo "::error::Timeout waiting for dns-test pod to be ready"
+    echo "=== dns-test Pod Description ==="
+    kubectl --kubeconfig "$KUBECONFIG_PATH" describe pod dns-test || true
+    echo "=== Cluster Events ==="
+    kubectl --kubeconfig "$KUBECONFIG_PATH" get events -A --sort-by=.lastTimestamp || true
+    echo "=== KubeSolo Logs (last 100 lines) ==="
+    sudo journalctl -u kubesolo -n 100 --no-pager || true
+    exit 1
+  fi
   
   # Test DNS with retries (CoreDNS may need a moment to be fully functional)
   DNS_OK=false
