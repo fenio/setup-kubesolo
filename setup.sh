@@ -240,7 +240,7 @@ if [ "$DNS_READINESS" = "true" ]; then
   done
   
   # Create a test pod and verify DNS resolution
-  kubectl --kubeconfig "$KUBECONFIG_PATH" run dns-test --image=public.ecr.aws/docker/library/busybox:stable --restart=Never -- sleep 300
+  kubectl --kubeconfig "$KUBECONFIG_PATH" run dns-test --image=mirror.gcr.io/library/busybox:stable --restart=Never -- sleep 300
   if ! kubectl --kubeconfig "$KUBECONFIG_PATH" wait --for=condition=ready --timeout=120s pod/dns-test; then
     echo "::error::Timeout waiting for dns-test pod to be ready"
     echo "=== dns-test Pod Description ==="
